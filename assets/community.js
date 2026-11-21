@@ -217,6 +217,7 @@
   }
 
   /* ---------------- news wall ---------------- */
+  const newsImg = (p) => N().S.sb.storage.from("news-images").getPublicUrl(p).data.publicUrl;
   function renderNews() {
     const { S, esc, safeUrl } = N(), box = $("#newsList"); if (!box) return;
     $("#addNews").hidden = S.demo;
@@ -228,7 +229,7 @@
       const own = mine(n.posted_by), u = n.link ? safeUrl(n.link) : "";
       return `<article class="card news${n.pinned ? " pinned" : ""}">
         <div class="chips">${n.pinned ? `<span class="chip goldchip">📌 Pinned</span>` : ""}${n.status !== "approved" ? `<span class="chip pending">Waiting for moderator approval</span>` : ""}</div>
-        <h3>${esc(n.title)}</h3>${n.body ? `<p class="jdesc" style="white-space:pre-wrap">${esc(n.body)}</p>` : ""}
+        ${n.image_path ? `<a href="${esc(newsImg(n.image_path))}" target="_blank" rel="noopener"><img class="newsimg" src="${esc(newsImg(n.image_path))}" alt="" loading="lazy"></a>` : ""}<h3>${esc(n.title)}</h3>${n.body ? `<p class="jdesc" style="white-space:pre-wrap">${esc(n.body)}</p>` : ""}
         <div class="meta">${esc(n.posted_by_name || n.posted_by)} · ${esc(dateOf(n.created_at))}</div>
         <div class="card-actions">${u && u !== "#" ? `<a class="btn btn-line btn-sm" href="${esc(u)}" target="_blank" rel="noopener">Read more ↗</a>` : ""}
           ${own || S.isStaff ? `<button class="btn btn-line btn-sm" data-ndel="${esc(n.id)}">Delete</button>` : ""}
@@ -244,16 +245,29 @@
       <form class="pf" id="newsForm"><label class="full">Headline *<input name="title" required maxlength="140" placeholder="e.g. Congratulations to … on becoming a Chartered Accountant"></label>
         <label class="full">Details<textarea name="body" rows="4" maxlength="2000"></textarea></label>
         <label class="full">Link (optional)<input name="link" placeholder="https://"></label>
+        <label class="full">Picture (optional, JPG or PNG)<input name="image" type="file" accept="image/jpeg,image/png,image/webp"></label>
         ${S.isStaff ? `<label class="consent full"><input type="checkbox" name="pinned"> Pin to the top</label>` : ""}
         <button class="btn btn-brand full" type="submit">Post</button><div class="formmsg full" id="newsMsg"></div></form>`);
     $("#newsForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const f = Object.fromEntries(new FormData(e.target).entries());
-      if (f.link.trim() && safeUrl(f.link.trim()) === "#") return ($("#newsMsg").textContent = "The link must start with https://");
-      const r = await S.sb.from("news").insert({ title: f.title.trim(), body: f.body.trim() || null, link: f.link.trim() || null, pinned: !!f.pinned,
-        posted_by: S.email, posted_by_name: (S.me && S.me.name) || S.email });
-      if (r.error) return ($("#newsMsg").textContent = r.error.message);
-      closeSheet(); banner(S.isStaff ? "Posted." : "Submitted. It will appear once a moderator approves it.", "ok"); X.refresh();
+      const form = e.target, msg = $("#newsMsg"), btn = form.querySelector("button[type=submit]"), fd = new FormData(form), f = Object.fromEntries(fd.entries());
+      const fail = (t) => { msg.style.color = "#8a1f17"; msg.textContent = t; btn.disabled = false; btn.textContent = "Post"; };
+      if (f.link.trim() && safeUrl(f.link.trim()) === "#") return fail("The link must start with https://");
+      btn.disabled = true; btn.textContent = "Posting…"; msg.textContent = "";
+      let path = null;
+      try {
+        const file = fd.get("image");
+        if (file && file.size > 0) {
+          if (!/^image\//.test(file.type)) return fail("The picture must be a JPG or PNG image.");
+          const blob = await N().resizeImage(file, 1400); path = `${S.uid}/news-${Date.now()}.jpg`;
+          const up = await S.sb.storage.from("news-images").upload(path, blob, { contentType: "image/jpeg" });
+          if (up && up.error) return fail("Picture upload failed (" + up.error.message + "). Run the latest schema.sql in Supabase.");
+        }
+        const r = await S.sb.from("news").insert({ title: f.title.trim(), body: f.body.trim() || null, link: f.link.trim() || null, pinned: !!f.pinned, image_path: path,
+          posted_by: S.email, posted_by_name: (S.me && S.me.name) || S.email });
+        if (r.error) { if (path) S.sb.storage.from("news-images").remove([path]); return fail(r.error.message); }
+        closeSheet(); banner(S.isStaff ? "Posted." : "Submitted. It will appear once a moderator approves it.", "ok"); X.refresh();
+      } catch (err) { fail(err.message || String(err)); }
     });
   }
 
@@ -324,7 +338,9 @@
     $("#newsList").addEventListener("click", async (e) => {
       if (e.target.closest("[data-nmore]")) { newsAll = !newsAll; return renderNews(); }
       const d = e.target.closest("[data-ndel]"); if (!d || !confirm("Delete this post?")) return;
+      const nn = N().S.news.find((x) => x.id === d.dataset.ndel);
       const r = await N().S.sb.from("news").delete().eq("id", d.dataset.ndel);
+      if (!r.error && nn && nn.image_path) N().S.sb.storage.from("news-images").remove([nn.image_path]);
       if (r.error) return N().banner(r.error.message, "error"); N().banner("Deleted.", "ok"); X.refresh();
     });
     $("#inboxWrap").addEventListener("click", async (e) => {

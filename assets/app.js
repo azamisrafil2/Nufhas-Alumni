@@ -120,7 +120,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
     $("#navAsk").hidden = !S.isMember; $("#navInbox").hidden = !S.isMember;
     $("#navProfile").hidden = !(S.session || S.demo);
     $(".menu-btn").hidden = !$$("#menu li").some((li) => !li.hidden);
-    $("#foot-mode").textContent = (S.demo ? "Demo mode — connect Supabase (see README)" : (S.session ? "Signed in as " + S.email : "")) + " · site v3.2";
+    $("#foot-mode").textContent = (S.demo ? "Demo mode — connect Supabase (see README)" : (S.session ? "Signed in as " + S.email : "")) + " · site v3.3";
   }
 
   function renderHome() {

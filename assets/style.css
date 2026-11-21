@@ -305,3 +305,6 @@ form.pf.editing{border:2px solid var(--green);border-radius:12px;padding:12px;ba
 .imp-grid input{width:100%;margin-top:3px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit}
 .consent{display:flex;gap:8px;align-items:center}
 @media(max-width:600px){.imp-grid{grid-template-columns:1fr}}
+
+.newsimg{display:block;width:100%;max-height:340px;object-fit:cover;border-radius:12px;margin:8px 0}
+.newsimg.thumb{max-width:220px;max-height:120px;margin:6px 0 0}

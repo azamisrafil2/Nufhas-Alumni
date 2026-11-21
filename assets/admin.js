@@ -39,7 +39,7 @@
       </div>
 
       <div class="card" style="margin-top:16px"><h3>News waiting for approval (${pendNews.length})</h3>
-        ${pendNews.length ? pendNews.map((n) => `<div class="arow"><div><b>${esc(n.title)}</b> <span class="muted">by ${esc(n.posted_by_name || n.posted_by)}</span><div class="muted">${esc((n.body || "").slice(0, 160))}</div></div>
+        ${pendNews.length ? pendNews.map((n) => `<div class="arow"><div><b>${esc(n.title)}</b> <span class="muted">by ${esc(n.posted_by_name || n.posted_by)}</span><div class="muted">${esc((n.body || "").slice(0, 160))}</div>${n.image_path ? `<img class="newsimg thumb" src="${esc(S.sb.storage.from("news-images").getPublicUrl(n.image_path).data.publicUrl)}" alt="">` : ""}</div>
           <div class="row"><button class="btn btn-brand btn-sm" data-napp="${n.id}">Approve</button><button class="btn btn-line btn-sm" data-nrej="${n.id}">Delete</button></div></div>`).join("") : `<p class="muted">Nothing to approve.</p>`}
       </div>
 
@@ -210,7 +210,7 @@
     } else if (d.dlk) { if (!need(adm) || !confirm("Delete this link?")) return; r = await S.sb.from("links").delete().eq("id", d.dlk); if (editLk === d.dlk) editLk = null; }
     else if (d.dj) { if (!confirm("Delete this job?")) return; r = await S.sb.from("jobs").delete().eq("id", d.dj); }
     else if (d.napp) r = await S.sb.from("news").update({ status: "approved" }).eq("id", d.napp);
-    else if (d.nrej) { if (!confirm("Delete this news post?")) return; r = await S.sb.from("news").delete().eq("id", d.nrej); }
+    else if (d.nrej) { if (!confirm("Delete this news post?")) return; const nn = S.news.find((x) => x.id === d.nrej); r = await S.sb.from("news").delete().eq("id", d.nrej); if (!r.error && nn && nn.image_path) S.sb.storage.from("news-images").remove([nn.image_path]); }
     else if (d.mrm) { if (!need(adm) || !confirm(`Remove ${d.mrm} as moderator?`)) return; r = await S.sb.from("moderators").delete().eq("email", d.mrm); }
     else if (d.rdis) { r = await S.sb.from("reports").delete().eq("id", d.rdis); msg = "Report dismissed."; }
     else if (d.rdel) {
