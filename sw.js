@@ -1,6 +1,6 @@
 /* NUFHAS Alumni — service worker: lets the site install like an app and open the page shell offline.
    Only this site's own files are cached. Member data comes from Supabase (another domain) and is never cached here. */
-const CACHE = "nufhas-v3";
+const CACHE = "nufhas-v3b";
 const SHELL = ["./", "index.html", "assets/style.css", "assets/app.js", "assets/community.js", "assets/career.js", "assets/admin.js", "assets/smart.js", "assets/data.js", "assets/icon-192.png"];
 
 self.addEventListener("install", (e) => {
