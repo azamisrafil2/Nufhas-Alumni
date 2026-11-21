@@ -88,6 +88,7 @@
           ${ev && ev.bannerPath ? `<label class="consent full"><input type="checkbox" name="removeBanner"> Remove the current banner</label>` : ""}
           ${ev ? "" : `<p class="muted full" style="margin:0;font-size:.85rem">New events are emailed automatically to members who have notifications switched on.</p>`}
           <button class="btn btn-brand btn-sm" type="submit">${ev ? "Save changes" : "Add event"}</button>${ev ? `<button class="btn btn-line btn-sm" type="button" data-ecancel="1">Cancel</button>` : ""}
+          <div class="formmsg full" id="evMsg"></div>
         </form>
         ${S.events.map((e) => `<div class="arow"><div><b>${esc(e.title)}</b> <span class="muted">${esc(fmt(e.date))} · ${esc(e.place)}</span></div>
           <div class="row"><button class="btn btn-line btn-sm" data-edev="${e.id}">Edit</button><button class="btn btn-line btn-sm" data-dev="${e.id}">Delete</button></div></div>`).join("") || `<p class="muted">No events.</p>`}
@@ -101,6 +102,7 @@
           <label class="full">Short description<input name="description" value="${esc(lk ? lk.text : "")}"></label>
           <label>Order (1 = first)<input name="sort" type="number" value="${lk ? esc(lk.sort ?? 10) : 10}"></label>
           <div style="align-self:end;display:flex;gap:8px"><button class="btn btn-brand btn-sm" type="submit">${lk ? "Save changes" : "Add link"}</button>${lk ? `<button class="btn btn-line btn-sm" type="button" data-lcancel="1">Cancel</button>` : ""}</div>
+          <div class="formmsg full" id="lkMsg"></div>
         </form>
         ${S.links.map((l) => `<div class="arow"><div><b>${esc(l.title)}</b> <span class="muted">${esc(l.link)}</span></div>
           <div class="row"><button class="btn btn-line btn-sm" data-edlk="${l.id}">Edit</button><button class="btn btn-line btn-sm" data-dlk="${l.id}">Delete</button></div></div>`).join("") || `<p class="muted">No links.</p>`}
@@ -108,36 +110,55 @@
       <p class="muted" style="margin-top:14px">Bulk edits (import, export) are done in the Supabase Table Editor.</p>` : ""}`;
   };
 
+  // Shows a message right under the form (always visible) and as a banner.
+  function formFail(msgId, text) {
+    const m = $("#" + msgId); if (m) { m.style.color = "#8a1f17"; m.textContent = "Not saved: " + text; m.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    N().banner("Not saved: " + text, "error", 12000);
+  }
+  const busy = (form, on) => { const b = form.querySelector("button[type=submit]"); if (b) { b.disabled = on; b.dataset.t = b.dataset.t || b.textContent; b.textContent = on ? "Saving…" : b.dataset.t; } };
+  const noRow = "the database did not accept the change. Make sure you are signed in as an admin, then reload the page and try again.";
+
   async function saveEvent(form) {
     const { S, banner, resizeImage } = N(), fd = new FormData(form), f = Object.fromEntries(fd.entries());
     const old = f.id ? S.events.find((x) => String(x.id) === String(f.id)) : null;
+    if (f.id && !old) return formFail("evMsg", "that event no longer exists. Reload the page.");
+    busy(form, true);
     let newPath, changed = false;
-    const file = fd.get("banner");
-    if (file && file.size > 0) {
-      if (!/^image\//.test(file.type)) return banner("The banner must be an image (JPG or PNG).", "error");
-      try {
+    try {
+      const file = fd.get("banner");
+      if (file && file.size > 0) {
+        if (!/^image\//.test(file.type)) return formFail("evMsg", "the banner must be an image (JPG or PNG).");
         const blob = await resizeImage(file, 1600); newPath = `ev-${Date.now()}.jpg`;
         const up = await S.sb.storage.from("event-banners").upload(newPath, blob, { contentType: "image/jpeg" });
-        if (up.error) return banner(up.error.message, "error");
+        if (up && up.error) return formFail("evMsg", "banner upload failed (" + up.error.message + ")");
         changed = true;
-      } catch (err) { return banner(err.message || String(err), "error"); }
-    } else if (f.removeBanner === "on" && old && old.bannerPath) { newPath = null; changed = true; }
-    const row = { title: f.title.trim(), event_date: f.date, event_time: f.time.trim() || null, place: f.place.trim() || null, tag: f.tag.trim() || null,
-      link: f.link.trim() || null, description: f.description.trim() || null };
-    if (changed) row.banner_path = newPath; else if (!old) row.banner_path = null;
-    const r = old ? await S.sb.from("events").update(row).eq("id", old.id) : await S.sb.from("events").insert(row);
-    if (r.error) { if (changed && newPath) S.sb.storage.from("event-banners").remove([newPath]); return banner(r.error.message, "error"); }
-    if (changed && old && old.bannerPath) S.sb.storage.from("event-banners").remove([old.bannerPath]);
-    editEv = null; await N().reload(); banner(old ? "Event updated." : "Event added. Members with notifications on will get an email.", "ok");
+      } else if (f.removeBanner === "on" && old && old.bannerPath) { newPath = null; changed = true; }
+      const row = { title: f.title.trim(), event_date: f.date, event_time: (f.time || "").trim() || null, place: (f.place || "").trim() || null, tag: (f.tag || "").trim() || null,
+        link: (f.link || "").trim() || null, description: (f.description || "").trim() || null };
+      if (changed) row.banner_path = newPath; else if (!old) row.banner_path = null;
+      // .select() returns the saved row, so a change the database silently ignored is detected.
+      const r = old ? await S.sb.from("events").update(row).eq("id", old.id).select() : await S.sb.from("events").insert(row).select();
+      if (r.error || !r.data || !r.data.length) {
+        if (changed && newPath) S.sb.storage.from("event-banners").remove([newPath]);
+        return formFail("evMsg", r.error ? r.error.message : noRow);
+      }
+      if (changed && old && old.bannerPath) S.sb.storage.from("event-banners").remove([old.bannerPath]);
+      editEv = null; await N().reload(); banner(old ? "Event updated." : "Event added. Members with notifications on will get an email.", "ok");
+    } catch (err) { formFail("evMsg", err.message || String(err)); }
+    finally { busy(form, false); }
   }
 
   async function saveLink(form) {
     const { S, banner, safeUrl } = N(), f = Object.fromEntries(new FormData(form).entries());
-    if (safeUrl(f.url.trim()) === "#") return banner("The link must start with https:// or #/ (for a page on this site).", "error");
-    const row = { title: f.title.trim(), description: f.description.trim() || null, url: f.url.trim(), sort: +f.sort || 0 };
-    const r = f.id ? await S.sb.from("links").update(row).eq("id", f.id) : await S.sb.from("links").insert(row);
-    if (r.error) return banner(r.error.message, "error");
-    const was = !!f.id; editLk = null; await N().reload(); banner(was ? "Link updated." : "Link added.", "ok");
+    if (safeUrl(f.url.trim()) === "#") return formFail("lkMsg", "the link must start with https:// or #/ (for a page on this site).");
+    busy(form, true);
+    try {
+      const row = { title: f.title.trim(), description: (f.description || "").trim() || null, url: f.url.trim(), sort: +f.sort || 0 };
+      const r = f.id ? await S.sb.from("links").update(row).eq("id", f.id).select() : await S.sb.from("links").insert(row).select();
+      if (r.error || !r.data || !r.data.length) return formFail("lkMsg", r.error ? r.error.message : noRow);
+      const was = !!f.id; editLk = null; await N().reload(); banner(was ? "Link updated." : "Link added.", "ok");
+    } catch (err) { formFail("lkMsg", err.message || String(err)); }
+    finally { busy(form, false); }
   }
 
   async function addModerator(form) {

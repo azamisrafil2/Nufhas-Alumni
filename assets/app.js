@@ -9,7 +9,7 @@
   const JOB_TYPES = ["Full-time", "Part-time", "Internship", "Contract"];
 
   const S = { sb: null, demo: true, session: null, uid: null, email: "", me: null, isAdmin: false, isMember: false, isMod: false, isStaff: false,
-              members: [], jobs: [], events: [], links: [], library: [], news: [], questions: [], answers: [], inbox: [], marks: [], reports: [], stats: null, ctx: { designations: [], departments: [], locations: [], skills: [] } };
+              members: [], jobs: [], events: [], links: [], library: [], news: [], questions: [], answers: [], inbox: [], marks: [], reports: [], experiences: [], stats: null, ctx: { designations: [], departments: [], locations: [], skills: [] } };
 
   /* ---------------- helpers ---------------- */
   const fmt = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
@@ -64,7 +64,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
 
   /* ---------------- data loading ---------------- */
   async function loadAll() {
-    Object.assign(S, { members: [], jobs: [], library: [], news: [], questions: [], answers: [], inbox: [], marks: [], reports: [], me: null, isAdmin: false, isMember: false, isMod: false, isStaff: false, email: "" });
+    Object.assign(S, { members: [], jobs: [], library: [], news: [], questions: [], answers: [], inbox: [], marks: [], reports: [], experiences: [], me: null, isAdmin: false, isMember: false, isMod: false, isStaff: false, email: "" });
     if (S.demo) { S.events = EVENTS.map((e, i) => ({ id: "e" + i, ...e })); S.links = RESOURCES.map((r, i) => ({ id: "l" + i, ...r })); S.members = EXAMPLE_MEMBERS; S.library = EXAMPLE_LIBRARY; S.jobs = EXAMPLE_JOBS.slice(); S.isMember = true; buildCtx(); return; }
     try {
       const st = await S.sb.rpc("public_stats"); S.stats = st.data;
@@ -86,6 +86,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
             S.sb.from("links").select("*").order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(100)]);
           S.events = (ev.data || []).map(toEvent); S.links = (lk.data || []).map(toLink);
           await NUFX.load();
+          await CAR.load();
         }
       }
     } catch (e) { console.error(e); banner("Could not load data: " + (e.message || e), "error", 0); }
@@ -261,6 +262,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
         ${row("Phone", showPhone ? `<button class="link-btn" id="reveal">Click to reveal number</button>` : (m.phone ? "Hidden by member" : ""))}
         ${row("Email", showEmail ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : (m.email ? "Hidden — use Send message" : ""))}
       </dl>
+      ${CAR.timelineHtml(m)}
       <div class="row">
         ${m.cvPath ? `<button class="btn btn-dark btn-sm" data-cv="${esc(m.cvPath)}">View CV</button><button class="btn btn-line btn-sm" data-cv="${esc(m.cvPath)}" data-dl="1">Download CV</button>` : `<span class="cvpending">CV not uploaded yet</span>`}
         ${m.linkedin ? `<a class="btn btn-line btn-sm" href="${esc(m.linkedin)}" target="_blank" rel="noopener">LinkedIn ↗</a>` : ""}
@@ -518,6 +520,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
           <label>Repeat password<input type="password" name="pw2" required minlength="8" autocomplete="new-password"></label>
           <button class="btn btn-line full" type="submit">Save password</button><div class="formmsg full" id="pwMsg"></div></form>
       </div>`;
+    if (S.me) CAR.mount(wrap);
     const toggle = () => { $("#subjWrap").hidden = !LEVEL_STATUSES.includes($("#pStatus").value); };
     $("#pStatus").addEventListener("input", toggle); toggle();
     const mtoggle = () => { $("#mtWrap").hidden = !$("#pMentor").checked; };
@@ -685,7 +688,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
 
   async function boot() {
     S.demo = !(typeof SUPABASE_URL === "string" && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
-    initDirectory(); initJobs(); initLibrary(); NUFX.init(); ADM.init();
+    initDirectory(); initJobs(); initLibrary(); NUFX.init(); CAR.init(); ADM.init();
     $("#year").textContent = today.getFullYear();
 
     document.addEventListener("click", (e) => {

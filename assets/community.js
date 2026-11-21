@@ -83,54 +83,137 @@
     });
   };
 
-  /* ---------------- private messages ---------------- */
-  X.compose = function (memberId, kind) {
-    const m = N().S.members.find((x) => String(x.id) === String(memberId));
-    if (m) composeTo(m, kind || "message");
-  };
-  function composeTo(m, kind) {
-    const { S, esc, openSheet, closeSheet, banner } = N();
-    if (S.demo) return banner("Messaging works after Supabase is connected.", "info");
-    const title = kind === "mentorship" ? "Request mentorship" : "Send a message";
-    openSheet(`<h2 style="font-size:1.3rem;margin-bottom:4px">${title}</h2><p class="muted" style="margin:0 0 10px">To <b>${esc(m.name)}</b>. They will see it under <b>Messages</b> on this site.</p>
-      <form class="pf" id="msgForm"><label class="full">Message<textarea name="message" rows="5" required maxlength="1000" placeholder="${kind === "mentorship" ? "Say a little about yourself and what you would like guidance on." : "Write your message…"}"></textarea></label>
-      <button class="btn btn-brand full" type="submit">Send</button><div class="formmsg full" id="msgMsg"></div>
-      <p class="muted full" style="margin:0;font-size:.82rem">Messages are private between you and the recipient. Moderators cannot read them. Up to 10 messages per day.</p></form>`);
-    $("#msgForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const message = new FormData(e.target).get("message").trim(); if (!message) return;
-      const r = await S.sb.from("contact_requests").insert({ kind, from_email: S.email, from_name: (S.me && S.me.name) || S.email, to_email: m.email, message });
-      if (r.error) return ($("#msgMsg").textContent = r.error.message);
-      closeSheet(); banner("Message sent.", "ok"); X.refresh();
+  /* ---------------- private messages (chat style) ---------------- */
+  let activeThread = null, pendingKind = "message", pollTimer = null;
+  const lc = (e) => String(e || "").toLowerCase();
+  const timeOf = (iso) => { try { return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+  const dayOf = (iso) => { try { return new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }); } catch { return ""; } };
+
+  function threads() {
+    const { S } = N(), me = S.email, map = new Map();
+    S.inbox.forEach((r) => {
+      const other = lc(r.from_email) === me ? lc(r.to_email) : lc(r.from_email);
+      if (!map.has(other)) map.set(other, { email: other, msgs: [], unread: 0 });
+      const t = map.get(other); t.msgs.push(r);
+      if (lc(r.to_email) === me && !r.is_read) t.unread++;
     });
+    const list = [...map.values()];
+    list.forEach((t) => { t.msgs.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))); t.last = t.msgs[t.msgs.length - 1]; });
+    if (activeThread && !map.has(activeThread)) list.push({ email: activeThread, msgs: [], unread: 0, last: null });
+    list.sort((a, b) => String(b.last ? b.last.created_at : "9").localeCompare(String(a.last ? a.last.created_at : "9")));
+    return list;
+  }
+  const nameFor = (email, t) => {
+    const p = memberByEmail(email); if (p) return p.name;
+    const r = t && t.msgs.find((m) => lc(m.from_email) === email && m.from_name); return r ? r.from_name : email;
+  };
+
+  X.compose = function (memberId, kind) {
+    const { S, banner, closeSheet } = N();
+    if (S.demo) return banner("Messaging works after Supabase is connected.", "info");
+    const m = S.members.find((x) => String(x.id) === String(memberId)); if (!m) return;
+    activeThread = lc(m.email); pendingKind = kind || "message";
+    closeSheet();
+    if (location.hash.startsWith("#/inbox")) { renderInbox(); } else location.hash = "#/inbox";
+    setTimeout(() => { renderInbox(); const t = $("#chatText"); if (t) t.focus(); }, 30);
+  };
+
+  function ensureChat() {
+    const w = $("#inboxWrap"); if (!w) return null;
+    if (!$("#chat", w)) {
+      w.innerHTML = `<div class="chat" id="chat">
+        <aside class="chat-list" id="chatList"></aside>
+        <section class="chat-pane">
+          <div class="chat-head" id="chatHead"></div>
+          <div class="chat-msgs" id="chatMsgs"></div>
+          <form class="chat-form" id="chatForm"><textarea id="chatText" rows="1" maxlength="1000" placeholder="Type a message…" aria-label="Message"></textarea>
+            <button class="btn btn-brand btn-sm" type="submit">Send</button></form>
+          <div class="formmsg" id="chatErr" style="padding:0 14px 8px"></div>
+        </section></div>`;
+    }
+    return w;
   }
 
   function renderInbox() {
     const { S, esc } = N(), w = $("#inboxWrap"); if (!w) return;
-    const me = S.email, unread = S.inbox.filter((r) => !r.is_read && String(r.to_email).toLowerCase() === me).length;
-    const b = $("#inboxBadge"); if (b) { b.textContent = unread; b.hidden = !unread; }
+    const me = S.email, unreadTotal = S.inbox.filter((r) => !r.is_read && lc(r.to_email) === me).length;
+    const b = $("#inboxBadge"); if (b) { b.textContent = unreadTotal; b.hidden = !unreadTotal; }
     if (S.demo) { w.innerHTML = demoNote("Messages"); return; }
-    const list = S.inbox.filter((r) => inboxTab === "in" ? String(r.to_email).toLowerCase() === me : String(r.from_email).toLowerCase() === me);
-    const kindLabel = { message: "Message", mentorship: "Mentorship request", hiring: "Hiring" };
-    w.innerHTML = `<div class="tabs"><button class="tab${inboxTab === "in" ? " on" : ""}" data-tab="in">Received${unread ? ` (${unread} new)` : ""}</button><button class="tab${inboxTab === "out" ? " on" : ""}" data-tab="out">Sent</button></div>
-      ${list.length ? list.map((r) => {
-        const other = inboxTab === "in" ? { email: r.from_email, name: r.from_name } : { email: r.to_email, name: (memberByEmail(r.to_email) || {}).name };
-        const p = memberByEmail(other.email);
-        return `<article class="card msg${inboxTab === "in" && !r.is_read ? " unread" : ""}"><div class="row-between"><div><b>${inboxTab === "in" ? "From" : "To"}: ${esc(other.name || other.email)}</b>
-            <span class="chip">${esc(kindLabel[r.kind] || "Message")}</span></div><span class="muted">${esc(dateOf(r.created_at))}</span></div>
-          <p class="jdesc" style="white-space:pre-wrap">${esc(r.message)}</p>
-          <div class="card-actions">${p ? `<button class="btn btn-brand btn-sm" data-reply="${esc(p.id)}">${inboxTab === "in" ? "Reply" : "Message again"}</button><button class="btn btn-line btn-sm" data-vp="${esc(p.id)}">View profile</button>` : `<span class="muted">Member no longer in the directory</span>`}
-            <button class="btn btn-line btn-sm" data-mdel="${esc(r.id)}">Delete</button></div></article>`;
-      }).join("") : `<div class="empty" style="display:block">${inboxTab === "in" ? "No messages yet." : "You have not sent any messages."}</div>`}`;
-    if (location.hash.startsWith("#/inbox") && inboxTab === "in" && unread) markRead();
+    ensureChat();
+    const list = threads();
+    if (!activeThread && list.length && window.matchMedia && window.matchMedia("(min-width: 761px)").matches) activeThread = list[0].email;
+    $("#chat").classList.toggle("open", !!activeThread);
+
+    $("#chatList").innerHTML = list.length ? list.map((t) => {
+      const p = memberByEmail(t.email), nm = nameFor(t.email, t);
+      const av = p ? N().avatar(p, "avatar sm") : `<div class="avatar sm" style="background:#53565A">${esc(N().initials(nm))}</div>`;
+      return `<button type="button" class="thread${t.email === activeThread ? " on" : ""}" data-thread="${esc(t.email)}">${av}
+        <div class="tmeta"><div class="trow"><b>${esc(nm)}</b><span class="muted">${t.last ? esc(timeOf(t.last.created_at)) : ""}</span></div>
+          <div class="trow"><span class="tprev">${t.last ? (lc(t.last.from_email) === me ? "You: " : "") + esc(String(t.last.message).slice(0, 60)) : "New conversation"}</span>${t.unread ? `<span class="badge">${t.unread}</span>` : ""}</div></div></button>`;
+    }).join("") : `<p class="muted" style="padding:16px">No conversations yet. Open a member's profile and choose <b>Send message</b>.</p>`;
+
+    const t = list.find((x) => x.email === activeThread);
+    const pane = $("#chat .chat-pane");
+    pane.hidden = !t;
+    if (!t) { return; }
+    const p = memberByEmail(t.email), nm = nameFor(t.email, t);
+    $("#chatHead").innerHTML = `<button class="link-btn chat-back" data-chatback="1" aria-label="Back to conversations">←</button>
+      ${p ? N().avatar(p, "avatar sm") : ""}<div class="tmeta"><b>${esc(nm)}</b><div class="muted">${p ? esc([p.designation, p.company].filter(Boolean).join(" · ")) : "Member no longer in the directory"}</div></div>
+      <div class="row">${p ? `<button class="btn btn-line btn-sm" data-vp="${esc(p.id)}">View profile</button>` : ""}<button class="btn btn-line btn-sm" data-delthread="${esc(t.email)}">Delete chat</button></div>`;
+
+    const box = $("#chatMsgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80 || box.dataset.thread !== t.email;
+    let day = "";
+    box.innerHTML = t.msgs.length ? t.msgs.map((m) => {
+      const mineMsg = lc(m.from_email) === me, d = dayOf(m.created_at);
+      const sep = d !== day ? `<div class="daysep"><span>${esc(d)}</span></div>` : ""; day = d;
+      return `${sep}<div class="bubble ${mineMsg ? "me" : "them"}">${m.kind && m.kind !== "message" ? `<span class="bk">${m.kind === "mentorship" ? "Mentorship request" : "Hiring enquiry"}</span>` : ""}<div class="bt">${esc(m.message)}</div><span class="btime">${esc(timeOf(m.created_at))}</span></div>`;
+    }).join("") : `<div class="chat-empty">Say hello to <b>${esc(nm)}</b>${pendingKind === "mentorship" ? ". Introduce yourself and what guidance you would like." : "."}</div>`;
+    box.dataset.thread = t.email;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+    const ta = $("#chatText");
+    ta.placeholder = pendingKind === "mentorship" && !t.msgs.length ? "Introduce yourself and what you would like guidance on…" : "Type a message…";
+    if (location.hash.startsWith("#/inbox") && t.unread) markRead(t.email);
   }
-  async function markRead() {
+
+  async function markRead(email) {
     const { S } = N();
-    const ids = S.inbox.filter((r) => !r.is_read && String(r.to_email).toLowerCase() === S.email).map((r) => r.id);
+    const ids = S.inbox.filter((r) => !r.is_read && lc(r.to_email) === S.email && lc(r.from_email) === email).map((r) => r.id);
     if (!ids.length) return;
     S.inbox.forEach((r) => { if (ids.includes(r.id)) r.is_read = true; });
-    const b = $("#inboxBadge"); if (b) b.hidden = true;
+    renderInbox();
     await S.sb.from("contact_requests").update({ is_read: true }).in("id", ids);
+  }
+
+  async function loadInbox() {
+    const { S } = N(); if (S.demo || !S.sb || !S.isMember) return;
+    try {
+      const r = await S.sb.from("contact_requests").select("*").order("created_at", { ascending: false }).limit(500);
+      if (r.error) return;
+      S.inbox = r.data || [];
+    } catch (e) {}
+  }
+
+  async function sendChat(e) {
+    e.preventDefault();
+    const { S } = N(), ta = $("#chatText"), err = $("#chatErr"), message = ta.value.trim();
+    if (!message || !activeThread) return;
+    const to = memberByEmail(activeThread); if (!to) return (err.textContent = "This member is no longer in the directory.");
+    err.textContent = ""; const btn = e.target.querySelector("button"); btn.disabled = true;
+    const first = !S.inbox.some((r) => lc(r.from_email) === activeThread || lc(r.to_email) === activeThread);
+    const r = await S.sb.from("contact_requests").insert({ kind: first ? pendingKind : "message", from_email: S.email, from_name: (S.me && S.me.name) || S.email, to_email: to.email, message });
+    btn.disabled = false;
+    if (r.error) { err.style.color = "#8a1f17"; return (err.textContent = r.error.message); }
+    ta.value = ""; ta.style.height = ""; pendingKind = "message";
+    await loadInbox(); renderInbox(); ta.focus();
+  }
+
+  function startPolling() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      const { S } = N(); if (!S.isMember || S.demo || document.visibilityState === "hidden") return;
+      const before = S.inbox.length; await loadInbox();
+      if (S.inbox.length !== before || location.hash.startsWith("#/inbox")) renderInbox();
+    }, 20000);
   }
 
   /* ---------------- news wall ---------------- */
@@ -245,12 +328,23 @@
       if (r.error) return N().banner(r.error.message, "error"); N().banner("Deleted.", "ok"); X.refresh();
     });
     $("#inboxWrap").addEventListener("click", async (e) => {
-      const t = e.target.closest("[data-tab]"); if (t) { inboxTab = t.dataset.tab; return renderInbox(); }
-      const rp = e.target.closest("[data-reply]"); if (rp) return X.compose(rp.dataset.reply);
-      const d = e.target.closest("[data-mdel]"); if (!d || !confirm("Delete this message? It is removed for both of you.")) return;
-      const r = await N().S.sb.from("contact_requests").delete().eq("id", d.dataset.mdel);
-      if (r.error) return N().banner(r.error.message, "error"); X.refresh();
+      const t = e.target.closest("[data-thread]"); if (t) { activeThread = t.dataset.thread; pendingKind = "message"; renderInbox(); const ta = $("#chatText"); if (ta && window.innerWidth > 760) ta.focus(); return; }
+      if (e.target.closest("[data-chatback]")) { activeThread = null; renderInbox(); $("#chat").classList.remove("open"); return; }
+      const d = e.target.closest("[data-delthread]");
+      if (d && confirm("Delete this whole conversation? It is removed for both of you.")) {
+        const { S, banner } = N(), other = d.dataset.delthread;
+        const r1 = await S.sb.from("contact_requests").delete().eq("from_email", S.email).eq("to_email", other);
+        const r2 = await S.sb.from("contact_requests").delete().eq("from_email", other).eq("to_email", S.email);
+        if (r1.error || r2.error) return banner((r1.error || r2.error).message, "error");
+        activeThread = null; await loadInbox(); renderInbox(); $("#chat").classList.remove("open");
+      }
     });
+    $("#inboxWrap").addEventListener("submit", (e) => { if (e.target.id === "chatForm") sendChat(e); });
+    $("#inboxWrap").addEventListener("keydown", (e) => {
+      if (e.target.id === "chatText" && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chatForm").requestSubmit ? $("#chatForm").requestSubmit() : $("#chatForm").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true })); }
+    });
+    $("#inboxWrap").addEventListener("input", (e) => { if (e.target.id === "chatText") { e.target.style.height = "auto"; e.target.style.height = Math.min(120, e.target.scrollHeight) + "px"; } });
+    startPolling();
     document.addEventListener("click", async (e) => {
       const vp = e.target.closest("[data-vp]"); if (vp) return N().openProfile(vp.dataset.vp);
       const qd = e.target.closest("[data-qdel]");
@@ -264,6 +358,6 @@
         if (r.error) return N().banner(r.error.message, "error"); await X.refresh(); openThread(ad.dataset.qid);
       }
     });
-    window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/inbox")) renderInbox(); });
+    window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/inbox")) { loadInbox().then(renderInbox); renderInbox(); } });
   };
 })();

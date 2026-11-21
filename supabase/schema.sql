@@ -1,7 +1,7 @@
 -- =====================================================================
 --  NUFHAS Alumni Association — database schema (Supabase / PostgreSQL)
 --  Paste this whole file into: Supabase Dashboard > SQL Editor > New query > Run
---  Safe to re-run (v2: moderators, news, Q&A, messages, reports, job saves).
+--  Safe to re-run (v3: + career progression).
 -- =====================================================================
 
 -- ---------- TABLES ----------
@@ -465,7 +465,7 @@ grant select, insert, update, delete on public.contact_requests to authenticated
 
 drop trigger if exists trg_rate_contact on public.contact_requests;
 create trigger trg_rate_contact before insert on public.contact_requests
-  for each row execute function public.rate_limit('from_email', '10');
+  for each row execute function public.rate_limit('from_email', '100');
 
 drop policy if exists "contact read"   on public.contact_requests;
 drop policy if exists "contact insert" on public.contact_requests;
@@ -557,6 +557,57 @@ create table if not exists public.notify_log (
   created_at timestamptz not null default now()
 );
 alter table public.notify_log enable row level security;   -- no policies: service role only
+
+-- =====================================================================
+--  v3: CAREER PROGRESSION
+-- =====================================================================
+create table if not exists public.experiences (
+  id          uuid primary key default gen_random_uuid(),
+  profile_id  uuid not null references public.profiles(id) on delete cascade,
+  title       text not null check (char_length(title) <= 120),
+  company     text not null check (char_length(company) <= 120),
+  location    text check (char_length(location) <= 120),
+  start_date  date not null,
+  end_date    date,                       -- empty = current role
+  description text check (char_length(description) <= 1000),
+  created_at  timestamptz not null default now(),
+  check (end_date is null or end_date >= start_date)
+);
+create index if not exists experiences_profile on public.experiences (profile_id);
+alter table public.experiences enable row level security;
+grant select, insert, update, delete on public.experiences to authenticated;
+
+-- at most 40 positions per profile
+create or replace function public.limit_experiences() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if (select count(*) from public.experiences where profile_id = new.profile_id) >= 40 then
+    raise exception 'You can add at most 40 positions.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_limit_experiences on public.experiences;
+create trigger trg_limit_experiences before insert on public.experiences
+  for each row execute function public.limit_experiences();
+
+drop policy if exists "exp read"   on public.experiences;
+drop policy if exists "exp insert" on public.experiences;
+drop policy if exists "exp update" on public.experiences;
+drop policy if exists "exp delete" on public.experiences;
+create policy "exp read" on public.experiences for select to authenticated
+  using ( public.is_staff() or exists (select 1 from public.profiles p where p.id = profile_id
+          and (lower(p.email) = lower(coalesce(auth.jwt() ->> 'email','')) or (p.approved and public.is_member()))) );
+create policy "exp insert" on public.experiences for insert to authenticated
+  with check ( exists (select 1 from public.profiles p where p.id = profile_id
+          and lower(p.email) = lower(coalesce(auth.jwt() ->> 'email',''))) );
+create policy "exp update" on public.experiences for update to authenticated
+  using ( exists (select 1 from public.profiles p where p.id = profile_id
+          and lower(p.email) = lower(coalesce(auth.jwt() ->> 'email',''))) )
+  with check ( exists (select 1 from public.profiles p where p.id = profile_id
+          and lower(p.email) = lower(coalesce(auth.jwt() ->> 'email',''))) );
+create policy "exp delete" on public.experiences for delete to authenticated
+  using ( public.is_admin() or exists (select 1 from public.profiles p where p.id = profile_id
+          and lower(p.email) = lower(coalesce(auth.jwt() ->> 'email',''))) );
 
 -- ---------- FIRST ADMIN ----------
 -- Only needed on a brand-new project. Replace with YOUR email, remove the leading dashes, run once:
