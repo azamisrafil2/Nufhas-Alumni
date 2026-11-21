@@ -201,6 +201,9 @@ create table if not exists public.links (
   sort        int  not null default 0,
   created_at  timestamptz not null default now()
 );
+alter table public.events add column if not exists description text;
+alter table public.events add column if not exists event_time  text;
+alter table public.events add column if not exists banner_path text;
 alter table public.events enable row level security;
 alter table public.links  enable row level security;
 
@@ -209,13 +212,27 @@ drop policy if exists "events admin" on public.events;
 drop policy if exists "links read"   on public.links;
 drop policy if exists "links admin"  on public.links;
 
-create policy "events read"  on public.events for select to anon, authenticated using (true);
+create policy "events read"  on public.events for select to authenticated using (public.is_member());
 create policy "events admin" on public.events for all to authenticated using (public.is_admin()) with check (public.is_admin());
-create policy "links read"   on public.links  for select to anon, authenticated using (true);
+create policy "links read"   on public.links  for select to authenticated using (public.is_member());
 create policy "links admin"  on public.links  for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
-grant select on public.events, public.links to anon, authenticated;
-grant insert, update, delete on public.events, public.links to authenticated;
+revoke select on public.events, public.links from anon;
+grant select, insert, update, delete on public.events, public.links to authenticated;
+
+-- public bucket for event banner pictures (only admins can upload)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('event-banners', 'event-banners', true, 5242880, array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set public = excluded.public,
+  file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+drop policy if exists "banners read"   on storage.objects;
+drop policy if exists "banners insert" on storage.objects;
+drop policy if exists "banners update" on storage.objects;
+drop policy if exists "banners delete" on storage.objects;
+create policy "banners read"   on storage.objects for select using ( bucket_id = 'event-banners' );
+create policy "banners insert" on storage.objects for insert to authenticated with check ( bucket_id = 'event-banners' and public.is_admin() );
+create policy "banners update" on storage.objects for update to authenticated using ( bucket_id = 'event-banners' and public.is_admin() );
+create policy "banners delete" on storage.objects for delete to authenticated using ( bucket_id = 'event-banners' and public.is_admin() );
 
 insert into public.links (title, description, url, sort)
 select * from (values
@@ -256,7 +273,7 @@ create policy "library delete" on public.library for delete to authenticated
   using ( public.is_admin() or lower(uploaded_by) = lower(coalesce(auth.jwt() ->> 'email','')) );
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('library', 'library', false, 20971520, array['application/pdf'])
+values ('library', 'library', false, 52428800, array['application/pdf'])
 on conflict (id) do update set public = excluded.public,
   file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 

@@ -47,7 +47,9 @@
 
   const toLib = (r) => ({ id: r.id, title: r.title, kind: r.kind, level: r.level || "", subject: r.subject, year: r.year, description: r.description || "",
     filePath: r.file_path || "", linkUrl: r.link_url || "", by: r.uploaded_by, byName: r.uploaded_by_name || "", createdAt: r.created_at });
-  const toEvent = (r) => ({ id: r.id, title: r.title, date: r.event_date, place: r.place || "", tag: r.tag || "", link: r.link || "" });
+  const toEvent = (r) => ({ id: r.id, title: r.title, date: r.event_date, time: r.event_time || r.time || "", place: r.place || "", tag: r.tag || "", link: r.link || "",
+    description: r.description || "", bannerPath: r.banner_path || "" });
+  const bannerUrl = (p) => (S.sb && p ? S.sb.storage.from("event-banners").getPublicUrl(p).data.publicUrl : "");
   const toLink = (r) => ({ id: r.id, title: r.title, text: r.description || "", link: r.url });
   const safeUrl = (u) => (/^(https?:\/\/|#\/|mailto:)/i.test(u || "") ? u : "#");
   const todayIso = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
@@ -58,10 +60,6 @@
     if (S.demo) { S.events = EVENTS.map((e, i) => ({ id: "e" + i, ...e })); S.links = RESOURCES.map((r, i) => ({ id: "l" + i, ...r })); S.members = EXAMPLE_MEMBERS; S.library = EXAMPLE_LIBRARY; S.jobs = EXAMPLE_JOBS.slice(); S.isMember = true; buildCtx(); return; }
     try {
       const st = await S.sb.rpc("public_stats"); S.stats = st.data;
-      const [ev, lk] = await Promise.all([
-        S.sb.from("events").select("*").order("event_date", { ascending: true }).limit(200),
-        S.sb.from("links").select("*").order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(100)]);
-      S.events = (ev.data || []).map(toEvent); S.links = (lk.data || []).map(toLink);
       if (S.session) {
         S.email = (S.session.user.email || "").toLowerCase();
         const [a, m] = await Promise.all([S.sb.rpc("is_admin"), S.sb.rpc("is_member")]);
@@ -75,6 +73,10 @@
             S.sb.from("library").select("*").order("created_at", { ascending: false }).limit(1000)]);
           if (pm.error) throw pm.error; if (jb.error) throw jb.error;
           S.members = pm.data.map(toMember); S.jobs = jb.data.map(toJob); S.library = (lb.data || []).map(toLib);
+          const [ev, lk] = await Promise.all([
+            S.sb.from("events").select("*").order("event_date", { ascending: true }).limit(200),
+            S.sb.from("links").select("*").order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(100)]);
+          S.events = (ev.data || []).map(toEvent); S.links = (lk.data || []).map(toLink);
         }
       }
     } catch (e) { console.error(e); banner("Could not load data: " + (e.message || e), "error", 0); }
@@ -89,7 +91,10 @@
   /* ---------------- router ---------------- */
   function route() {
     const h = location.hash || "#/";
-    const r = h.startsWith("#/jobs") ? "jobs" : h.startsWith("#/library") ? "library" : h.startsWith("#/profile") ? "profile" : h.startsWith("#/admin") ? "admin" : "home";
+    let r = h.startsWith("#/jobs") ? "jobs" : h.startsWith("#/library") ? "library" : h.startsWith("#/profile") ? "profile" : h.startsWith("#/admin") ? "admin" : "home";
+    if ((r === "jobs" || r === "library") && !S.isMember) r = "home";
+    if (r === "profile" && !S.session && !S.demo) r = "home";
+    if (r === "admin" && !S.isAdmin) r = "home";
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + r));
     $$("#menu a").forEach((a) => a.classList.toggle("active", a.dataset.route === r));
     $("#menu").classList.remove("open");
@@ -99,9 +104,23 @@
 
   /* ---------------- render: nav / gate / stats ---------------- */
   function renderNav() {
-    $("#authBtn").textContent = S.session ? "Sign out" : "Sign in";
+    $("#authBtn").textContent = S.session ? "Sign out" : "Sign in / Sign up";
     $("#navAdmin").hidden = !S.isAdmin;
+    $("#navHome").hidden = !S.isMember; $("#navJobs").hidden = !S.isMember; $("#navLibrary").hidden = !S.isMember;
+    $("#navProfile").hidden = !(S.session || S.demo);
+    $(".menu-btn").hidden = !$$("#menu li").some((li) => !li.hidden);
     $("#foot-mode").textContent = S.demo ? "Demo mode — connect Supabase (see README)" : (S.session ? "Signed in as " + S.email : "");
+  }
+
+  function renderHome() {
+    const m = S.isMember;
+    $("#directory").hidden = !m; $("#eventsSec").hidden = !m;
+    $("#heroCta").innerHTML = m
+      ? `<a class="btn btn-primary" href="#directory">Browse the directory</a><a class="btn btn-ghost" href="#/jobs">View jobs</a>`
+      : S.session ? `<a class="btn btn-primary" href="#/profile">${S.me ? "My profile" : "Create my profile"}</a>`
+      : `<button class="btn btn-primary" data-act="signin" type="button">Sign in / Sign up</button><p class="hint">Members only. Enter your email and we will send you a one-time code. New here? The same button creates your account.</p>`;
+    const g = $("#homeGate");
+    g.hidden = m || !S.session || S.demo; g.innerHTML = g.hidden ? "" : gateHtml("the directory, jobs and library");
   }
 
   function gateHtml(what) {
@@ -385,7 +404,7 @@
         <label>Exam year / session<input name="year" type="number" min="2000" max="2100" placeholder="2025"></label>
         <label>Title (optional)<input name="title" placeholder="Auto: subject + year"></label>
         <label class="full">Description<textarea name="description" rows="2" placeholder="Short note, e.g. solved, chapter list"></textarea></label>
-        <label class="full">PDF file (max 20 MB)<input name="file" type="file" accept="application/pdf"></label>
+        <label class="full">PDF file (max 50 MB)<input name="file" type="file" accept="application/pdf"></label>
         <label class="full">…or a link (Google Drive etc.) if you are not uploading a file<input name="link" placeholder="https://"></label>
         <label class="consent full"><input type="checkbox" required> I have the right to share this material with NUFHAS Alumni members.</label>
         <button class="btn btn-brand full" type="submit">Add to library</button>
@@ -397,7 +416,7 @@
       const hasFile = file && file.size > 0, link = f.link.trim();
       if (!hasFile && !/^https?:\/\//i.test(link)) return (msg.textContent = "Choose a PDF file or paste a link starting with https://");
       if (hasFile && file.type !== "application/pdf") return (msg.textContent = "Only PDF files are allowed.");
-      if (hasFile && file.size > 20 * 1024 * 1024) return (msg.textContent = "The PDF must be 20 MB or smaller.");
+      if (hasFile && file.size > 50 * 1024 * 1024) return (msg.textContent = "The PDF must be 50 MB or smaller.");
       msg.textContent = "Uploading…";
       let path = null;
       try {
@@ -544,7 +563,10 @@
           <label>Date *<input name="date" type="date" required></label>
           <label>Place<input name="place" placeholder="Dhaka — Venue"></label>
           <label>Tag<input name="tag" placeholder="Networking / Workshop / Social"></label>
-          <label>Link (optional)<input name="link" placeholder="https://"></label>
+          <label>Time<input name="time" placeholder="e.g. 6:30 PM"></label>
+          <label>Registration / info link (optional)<input name="link" placeholder="https://"></label>
+          <label class="full">Details<textarea name="description" rows="4" placeholder="Agenda, venue directions, who can attend…"></textarea></label>
+          <label class="full">Banner picture (wide image, JPG/PNG, e.g. 1600 × 600)<input name="banner" type="file" accept="image/jpeg,image/png,image/webp"></label>
           <button class="btn btn-brand btn-sm full" type="submit">Add event</button>
         </form>
         ${S.events.map((e) => `<div class="arow"><div><b>${esc(e.title)}</b> <span class="muted">${esc(fmt(e.date))} · ${esc(e.place)}</span></div>
@@ -565,8 +587,21 @@
   }
   async function adminSubmit(e) {
     e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target).entries()); let r;
-    if (e.target.id === "evForm") r = await S.sb.from("events").insert({ title: f.title.trim(), event_date: f.date, place: f.place.trim() || null, tag: f.tag.trim() || null, link: f.link.trim() || null });
+    const fd = new FormData(e.target), f = Object.fromEntries(fd.entries()); let r;
+    if (e.target.id === "evForm") {
+      let bp = null; const file = fd.get("banner");
+      if (file && file.size > 0) {
+        if (!/^image\//.test(file.type)) return banner("The banner must be an image (JPG or PNG).", "error");
+        try {
+          const blob = await resizeImage(file, 1600); bp = `ev-${Date.now()}.jpg`;
+          const up = await S.sb.storage.from("event-banners").upload(bp, blob, { contentType: "image/jpeg" });
+          if (up.error) return banner(up.error.message, "error");
+        } catch (err) { return banner(err.message || String(err), "error"); }
+      }
+      r = await S.sb.from("events").insert({ title: f.title.trim(), event_date: f.date, event_time: f.time.trim() || null, place: f.place.trim() || null, tag: f.tag.trim() || null,
+        link: f.link.trim() || null, description: f.description.trim() || null, banner_path: bp });
+      if (r.error && bp) S.sb.storage.from("event-banners").remove([bp]);
+    }
     else if (e.target.id === "lkForm") r = await S.sb.from("links").insert({ title: f.title.trim(), description: f.description.trim() || null, url: f.url.trim(), sort: +f.sort || 0 });
     else return;
     if (r.error) return banner(r.error.message, "error");
@@ -577,7 +612,7 @@
     let r;
     if (a.dataset.ap) r = await S.sb.from("profiles").update({ approved: true }).eq("id", a.dataset.ap);
     else if (a.dataset.rj) { if (!confirm("Reject and delete this profile?")) return; r = await S.sb.from("profiles").delete().eq("id", a.dataset.rj); }
-    else if (a.dataset.dev) { if (!confirm("Delete this event?")) return; r = await S.sb.from("events").delete().eq("id", a.dataset.dev); }
+    else if (a.dataset.dev) { if (!confirm("Delete this event?")) return; const ev = S.events.find((x) => String(x.id) === a.dataset.dev); r = await S.sb.from("events").delete().eq("id", a.dataset.dev); if (!r.error && ev && ev.bannerPath) S.sb.storage.from("event-banners").remove([ev.bannerPath]); }
     else if (a.dataset.dlk) { if (!confirm("Delete this link?")) return; r = await S.sb.from("links").delete().eq("id", a.dataset.dlk); }
     else { if (!confirm("Delete this job?")) return; r = await S.sb.from("jobs").delete().eq("id", a.dataset.dj); }
     if (r.error) return banner(r.error.message, "error");
@@ -615,11 +650,21 @@
   function renderEvents() {
     const up = S.events.filter((e) => e.date >= todayIso()).slice(0, 8);
     $("#events").innerHTML = up.length ? up.map((ev) => {
-      const d = new Date(ev.date + "T00:00:00"), t = esc(ev.title);
-      const title = ev.link ? `<a href="${esc(safeUrl(ev.link))}" target="_blank" rel="noopener">${t}</a>` : t;
-      return `<div class="event"><div class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
-        <div><h3>${title}</h3><p>${esc([ev.place, ev.tag].filter(Boolean).join(" · "))}</p></div></div>`;
+      const d = new Date(ev.date + "T00:00:00"), meta = [ev.time, ev.place, ev.tag].filter(Boolean).join(" · ");
+      return `<div class="evcard" data-ev="${esc(ev.id)}" role="button" tabindex="0" aria-label="Event details: ${esc(ev.title)}">
+        ${ev.bannerPath ? `<img class="ebanner" src="${esc(bannerUrl(ev.bannerPath))}" alt="" loading="lazy">` : ""}
+        <div class="event"><div class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
+        <div><h3>${esc(ev.title)}</h3><p>${esc(meta)}</p></div><span class="more">Details →</span></div></div>`;
     }).join("") : `<p class="muted">No upcoming events yet.</p>`;
+  }
+  function openEvent(id) {
+    const ev = S.events.find((x) => String(x.id) === String(id)); if (!ev) return;
+    openSheet(`${ev.bannerPath ? `<img class="ebanner big" src="${esc(bannerUrl(ev.bannerPath))}" alt="">` : ""}
+      <h2 style="font-size:1.5rem;margin:14px 0 8px">${esc(ev.title)}</h2>
+      <div class="chips"><span class="chip ca">📅 ${esc(fmt(ev.date))}${ev.time ? " · " + esc(ev.time) : ""}</span>
+        ${ev.place ? `<span class="chip loc">📍 ${esc(ev.place)}</span>` : ""}${ev.tag ? `<span class="chip">${esc(ev.tag)}</span>` : ""}</div>
+      ${ev.description ? `<p class="edesc">${esc(ev.description)}</p>` : `<p class="muted" style="margin:14px 0">More details coming soon.</p>`}
+      ${ev.link ? `<a class="btn btn-brand" href="${esc(safeUrl(ev.link))}" target="_blank" rel="noopener">Register / more info ↗</a>` : ""}`);
   }
   function renderLinks() {
     $("#resources").innerHTML = S.links.length ? S.links.map((r) => {
@@ -629,7 +674,7 @@
   }
 
   /* ---------------- misc render ---------------- */
-  function renderAll() { renderNav(); renderStats(); populateFilters(); renderDirectory(); renderJobs(); renderProfile(); renderAdmin(); renderEvents(); renderLinks(); renderLibrary(); route(); }
+  function renderAll() { renderNav(); renderHome(); renderStats(); populateFilters(); renderDirectory(); renderJobs(); renderProfile(); renderAdmin(); renderEvents(); renderLinks(); renderLibrary(); route(); }
 
   async function boot() {
     S.demo = !(typeof SUPABASE_URL === "string" && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
@@ -642,6 +687,8 @@
       if (e.target === $("#modal") || e.target.closest(".close")) closeSheet();
     });
     document.addEventListener("keydown", (e) => e.key === "Escape" && closeSheet());
+    $("#events").addEventListener("click", (e) => { const c = e.target.closest("[data-ev]"); if (c) openEvent(c.dataset.ev); });
+    $("#events").addEventListener("keydown", (e) => { const c = e.target.closest("[data-ev]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openEvent(c.dataset.ev); } });
     $("#adminWrap").addEventListener("click", adminAction);
     $("#adminWrap").addEventListener("submit", adminSubmit);
     $("#authBtn").addEventListener("click", async () => {

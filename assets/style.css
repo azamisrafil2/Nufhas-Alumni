@@ -208,3 +208,15 @@ form.pf .consent input{width:auto;margin-top:3px}
 .arow{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .arow:last-child{border:0}
 @media(max-width:900px){.controls,.controls.jobs-controls{grid-template-columns:1fr 1fr}.jobs{grid-template-columns:1fr}form.pf{grid-template-columns:1fr}}
+
+/* ================= v3 additions ================= */
+.nav-right{display:flex;gap:10px;align-items:center}
+.hint{margin:14px 0 0;font-size:.9rem;color:#c9cccb;max-width:48ch}
+.evcard{border-bottom:1px solid var(--line);cursor:pointer;border-radius:12px;padding:10px 8px 0;margin:0 -8px;transition:.15s}
+.evcard:hover,.evcard:focus-visible{background:#f4f9ea;outline:none}
+.evcard .event{border:0;padding:12px 0}
+.evcard .more{margin-left:auto;font-size:.82rem;color:var(--brand);font-weight:600;white-space:nowrap}
+.ebanner{width:100%;aspect-ratio:8/3;object-fit:cover;border-radius:12px;display:block}
+.ebanner.big{margin:-30px -30px 0;width:calc(100% + 60px);max-width:none;border-radius:20px 20px 0 0}
+.edesc{white-space:pre-wrap;color:var(--ink-2);margin:14px 0}
+@media(max-width:900px){.nav ul{top:66px}}

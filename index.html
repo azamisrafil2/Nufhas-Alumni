@@ -14,15 +14,17 @@
   <header class="site">
     <div class="wrap nav">
       <a class="logo" href="#/">NUFHAS<span class="logo-dot"></span><small>Alumni Association</small></a>
-      <button class="menu-btn" aria-label="Menu">☰</button>
       <ul id="menu">
-        <li><a href="#/" data-route="home">Directory</a></li>
-        <li><a href="#/jobs" data-route="jobs">Jobs</a></li>
-        <li><a href="#/library" data-route="library">Library</a></li>
-        <li><a href="#/profile" data-route="profile">My profile</a></li>
+        <li id="navHome" hidden><a href="#/" data-route="home">Directory</a></li>
+        <li id="navJobs" hidden><a href="#/jobs" data-route="jobs">Jobs</a></li>
+        <li id="navLibrary" hidden><a href="#/library" data-route="library">Library</a></li>
+        <li id="navProfile" hidden><a href="#/profile" data-route="profile">My profile</a></li>
         <li id="navAdmin" hidden><a href="#/admin" data-route="admin">Admin</a></li>
-        <li><button class="btn btn-primary btn-sm" id="authBtn" type="button">Sign in</button></li>
       </ul>
+      <div class="nav-right">
+        <button class="btn btn-primary btn-sm" id="authBtn" type="button">Sign in / Sign up</button>
+        <button class="menu-btn" aria-label="Menu" hidden>☰</button>
+      </div>
     </div>
   </header>
 
@@ -36,14 +38,12 @@
           <span class="eyebrow">NUFHAS Alumni Association</span>
           <h1>Stay connected. <em>Make an impact</em> together.</h1>
           <p>Find colleagues and alumni, hire the right people with Smart Talent Search, and share opportunities across the NUFHAS community.</p>
-          <div class="cta">
-            <a class="btn btn-primary" href="#directory" id="ctaDir">Browse the directory</a>
-            <a class="btn btn-ghost" href="#/jobs">View jobs</a>
-          </div>
+          <div class="cta" id="heroCta"></div>
         </div>
       </div>
 
       <div class="wrap stats"><div class="stats-grid" id="stats"></div></div>
+      <div class="wrap"><div class="card gate" id="homeGate" hidden style="margin-top:22px"></div></div>
 
       <section id="directory">
         <div class="wrap">
@@ -85,7 +85,7 @@
         </div>
       </section>
 
-      <section class="alt">
+      <section class="alt" id="eventsSec">
         <div class="wrap two">
           <div>
             <div class="sec-head"><h2>Upcoming events</h2><p>Meetups, workshops and community drives.</p></div>
