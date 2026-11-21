@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NUFHAS Alumni Association</title>
+  <meta name="description" content="NUFHAS Alumni Association: member directory, smart talent search, job board and profiles for chartered accountancy students and professionals.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap nav">
+      <a class="logo" href="#/">NUFHAS<span class="logo-dot"></span><small>Alumni Association</small></a>
+      <button class="menu-btn" aria-label="Menu">☰</button>
+      <ul id="menu">
+        <li><a href="#/" data-route="home">Directory</a></li>
+        <li><a href="#/jobs" data-route="jobs">Jobs</a></li>
+        <li><a href="#/profile" data-route="profile">My profile</a></li>
+        <li id="navAdmin" hidden><a href="#/admin" data-route="admin">Admin</a></li>
+        <li><button class="btn btn-primary btn-sm" id="authBtn" type="button">Sign in</button></li>
+      </ul>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main>
+    <!-- ================= HOME / DIRECTORY ================= -->
+    <section id="view-home" class="view" style="padding:0">
+      <div class="hero">
+        <div class="wrap">
+          <span class="eyebrow">NUFHAS Alumni Association</span>
+          <h1>Stay connected. <em>Make an impact</em> together.</h1>
+          <p>Find colleagues and alumni, hire the right people with Smart Talent Search, and share opportunities across the NUFHAS community.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="#directory" id="ctaDir">Browse the directory</a>
+            <a class="btn btn-ghost" href="#/jobs">View jobs</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="wrap stats"><div class="stats-grid" id="stats"></div></div>
+
+      <section id="directory">
+        <div class="wrap">
+          <div class="sec-head">
+            <h2>Member directory</h2>
+            <p>Ordered by seniority: the earliest articleship start date comes first.</p>
+          </div>
+
+          <div class="card gate" id="gate" hidden></div>
+
+          <div id="dirWrap" hidden>
+            <div class="smartbox">
+              <label for="smart"><span class="spark">✦</span> Smart Talent Search</label>
+              <input id="smart" type="search" autocomplete="off" placeholder='Describe who you need, e.g. "Audit senior, 3+ years experience, IFRS, advanced level, O+"'>
+              <div class="parsed" id="parsed"></div>
+            </div>
+
+            <div class="bloodbar"><span>Blood group finder:</span><span id="bloodChips" style="display:contents"></span></div>
+
+            <div class="controls">
+              <select id="fStatus" aria-label="CA status"><option value="">All CA statuses</option></select>
+              <select id="fBlood" aria-label="Blood group"><option value="">Any blood group</option></select>
+              <select id="fDesig" aria-label="Designation"><option value="">All designations</option></select>
+              <select id="fExp" aria-label="Minimum experience">
+                <option value="">Any experience</option><option value="1">1+ years</option><option value="2">2+ years</option>
+                <option value="3">3+ years</option><option value="5">5+ years</option><option value="8">8+ years</option>
+              </select>
+              <select id="fSort" aria-label="Sort"></select>
+            </div>
+
+            <div class="bar">
+              <span id="count"></span>
+              <button class="link-btn" id="reset" type="button">Reset filters</button>
+            </div>
+
+            <div class="grid" id="grid"></div>
+            <div class="empty" id="empty">No members match your search.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="alt">
+        <div class="wrap two">
+          <div>
+            <div class="sec-head"><h2>Upcoming events</h2><p>Meetups, workshops and community drives.</p></div>
+            <div id="events"></div>
+          </div>
+          <div>
+            <div class="sec-head"><h2>Quick links</h2><p>Everything for members in one place.</p></div>
+            <div class="res" id="resources"></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= JOBS ================= -->
+    <section id="view-jobs" class="view" hidden>
+      <div class="wrap">
+        <div class="sec-head row-between">
+          <div><h2>Job board</h2><p>Opportunities posted by senior members and alumni.</p></div>
+          <button class="btn btn-brand" id="postJob" type="button">+ Post a job</button>
+        </div>
+        <div class="card gate" id="jobsGate" hidden></div>
+        <div id="jobsWrap" hidden>
+          <div class="controls jobs-controls">
+            <input id="jSearch" type="search" placeholder="Search title, company, skill…">
+            <select id="jType"><option value="">All types</option><option>Full-time</option><option>Part-time</option><option>Internship</option><option>Contract</option></select>
+            <select id="jExp"><option value="">Any experience</option><option value="0">Fresher / 0–1 yrs</option><option value="2">2+ years</option><option value="5">5+ years</option></select>
+          </div>
+          <div class="bar"><span id="jCount"></span></div>
+          <div class="jobs" id="jobsList"></div>
+          <div class="empty" id="jEmpty">No jobs found.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= MY PROFILE ================= -->
+    <section id="view-profile" class="view" hidden>
+      <div class="wrap narrow">
+        <div class="sec-head"><h2>My profile</h2><p>Keep your details current. Add your photo and CV so seniors and recruiters can find you.</p></div>
+        <div class="card gate" id="profileGate" hidden></div>
+        <div id="profileWrap" hidden></div>
+      </div>
+    </section>
+
+    <!-- ================= ADMIN ================= -->
+    <section id="view-admin" class="view" hidden>
+      <div class="wrap">
+        <div class="sec-head"><h2>Admin</h2><p>Approve new members and moderate jobs.</p></div>
+        <div id="adminWrap"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="sheet" id="sheet"></div></div>
+
+  <footer>
+    <div class="wrap foot">
+      <span>© <span id="year"></span> NUFHAS Alumni Association</span>
+      <span id="foot-mode"></span>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="assets/config.js"></script>
+  <script src="assets/data.js"></script>
+  <script src="assets/smart.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
