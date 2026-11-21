@@ -477,10 +477,24 @@
           <div class="muted">${m.cvPath ? "CV uploaded ✔ — choose a new file to replace it" : "Not uploaded yet"}</div>
           <input type="file" id="cvFile" accept="application/pdf"></div></div>
         <div class="formmsg" id="upMsg"></div>` : `<p class="muted">Save your profile first, then upload your photo and CV here.</p>`}
+      </div>
+      <div class="card uploads" style="margin-top:16px"><h3>Password</h3>
+        <p class="muted">Set or change a password so you can sign in without waiting for a code.</p>
+        <form class="pf" id="pwForm"><label>New password (8+ characters)<input type="password" name="pw" required minlength="8" autocomplete="new-password"></label>
+          <label>Repeat password<input type="password" name="pw2" required minlength="8" autocomplete="new-password"></label>
+          <button class="btn btn-line full" type="submit">Save password</button><div class="formmsg full" id="pwMsg"></div></form>
       </div>`;
     const toggle = () => { $("#subjWrap").hidden = !LEVEL_STATUSES.includes($("#pStatus").value); };
     $("#pStatus").addEventListener("input", toggle); toggle();
     $("#profForm").addEventListener("submit", saveProfile);
+    $("#pwForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target).entries()), m = $("#pwMsg");
+      if (f.pw !== f.pw2) { m.style.color = "#8a1f17"; return (m.textContent = "The two passwords do not match."); }
+      const { error } = await S.sb.auth.updateUser({ password: f.pw });
+      m.style.color = error ? "#8a1f17" : "#1f6b2a"; m.textContent = error ? error.message : "Password saved. You can now sign in with it.";
+      if (!error) e.target.reset();
+    });
     if (S.me) { $("#photoFile").addEventListener("change", uploadPhoto); $("#cvFile").addEventListener("change", uploadCv); }
   }
 
@@ -620,29 +634,59 @@
   }
 
   /* ---------------- auth ---------------- */
-  function openAuth() {
+  function openAuth(mode = "signin") {
     if (S.demo) return banner("Login is available after you connect Supabase (see README).", "info");
-    openSheet(`<h2 style="font-size:1.4rem">Sign in</h2>
-      <p class="muted" id="authHelp">Enter your email. We will send a one-time code (the email also contains a sign-in link).</p>
-      <form class="pf" id="authForm"><label class="full">Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label>
-        <button class="btn btn-brand full" type="submit">Send code</button><div class="formmsg full" id="authMsg"></div></form>`);
+    const T = { signin: "Sign in", signup: "Create account", code: "Email code" };
+    const tabs = `<div class="tabs">${Object.entries(T).map(([k, v]) => `<button type="button" class="tab${k === mode ? " on" : ""}" data-m="${k}">${v}</button>`).join("")}</div>`;
+    const em = `<label class="full">Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com"></label>`;
+    const pw = (n, label, auto) => `<label class="full">${label}<input type="password" name="${n}" required minlength="8" autocomplete="${auto}"></label>`;
+    const msg = `<div class="formmsg full" id="authMsg"></div>`;
+    const forms = {
+      signin: `${em}${pw("password", "Password", "current-password")}<button class="btn btn-brand full" type="submit">Sign in</button>${msg}
+        <p class="muted full" style="margin:0;font-size:.85rem">No password yet, or forgot it? Use the <b>Email code</b> tab once, then set a new password under <b>My profile</b>.</p>`,
+      signup: `${em}${pw("password", "Choose a password (8+ characters)", "new-password")}${pw("password2", "Repeat password", "new-password")}<button class="btn btn-brand full" type="submit">Create account</button>${msg}
+        <p class="muted full" style="margin:0;font-size:.85rem">We will email a code to confirm your address.</p>`,
+      code: `${em}<button class="btn btn-brand full" type="submit">Send code</button>${msg}
+        <p class="muted full" style="margin:0;font-size:.85rem">We email a one-time code. No password needed.</p>`
+    };
+    openSheet(`<h2 style="font-size:1.4rem">Welcome</h2>${tabs}<form class="pf" id="authForm">${forms[mode]}</form>`);
+    $$("#sheet .tab").forEach((b) => b.addEventListener("click", () => openAuth(b.dataset.m)));
     $("#authForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = new FormData(e.target).get("email").trim().toLowerCase(), msg = $("#authMsg");
-      msg.textContent = "Sending…";
-      const { error } = await S.sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
-      if (error) return (msg.textContent = error.message);
-      $("#authHelp").textContent = `We sent a code to ${email}. Enter it below (check spam too).`;
-      $("#authForm").innerHTML = `<label class="full">Code<input name="token" inputmode="numeric" autocomplete="one-time-code" required maxlength="10" placeholder="123456"></label>
-        <button class="btn btn-brand full" type="submit">Verify &amp; sign in</button><div class="formmsg full" id="authMsg"></div>`;
-      $("#authForm").addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        const token = new FormData(ev.target).get("token").trim(), m2 = $("#authMsg");
-        m2.textContent = "Verifying…";
-        const r = await S.sb.auth.verifyOtp({ email, token, type: "email" });
-        if (r.error) return (m2.textContent = r.error.message);
-        closeSheet();
-      });
+      const f = Object.fromEntries(new FormData(e.target).entries()), email = f.email.trim().toLowerCase(), m = $("#authMsg");
+      m.textContent = "Please wait…";
+      const redirect = location.origin + location.pathname;
+      if (mode === "signin") {
+        const { error } = await S.sb.auth.signInWithPassword({ email, password: f.password });
+        if (error) return (m.textContent = /invalid login/i.test(error.message) ? "Wrong email or password. No password yet? Use the Email code tab." : error.message);
+        return closeSheet();
+      }
+      if (mode === "signup") {
+        if (f.password !== f.password2) return (m.textContent = "The two passwords do not match.");
+        const { error } = await S.sb.auth.signUp({ email, password: f.password, options: { emailRedirectTo: redirect } });
+        if (error) return (m.textContent = error.message);
+        return askCode(email, "signup");
+      }
+      const { error } = await S.sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: redirect } });
+      if (error) return (m.textContent = error.message);
+      askCode(email, "email");
+    });
+  }
+
+  function askCode(email, type) {
+    $("#sheet").innerHTML = `<button class="close" aria-label="Close">×</button><h2 style="font-size:1.4rem">Enter your code</h2>
+      <p class="muted">We sent a code to <b>${esc(email)}</b>. Check your spam folder too.</p>
+      <form class="pf" id="codeForm"><label class="full">Code<input name="token" inputmode="numeric" autocomplete="one-time-code" required maxlength="10" placeholder="123456"></label>
+        <button class="btn btn-brand full" type="submit">Verify &amp; continue</button><div class="formmsg full" id="codeMsg"></div>
+        ${type === "signup" ? `<p class="muted full" style="margin:0;font-size:.85rem">No email after a few minutes? You may already have an account: use the <b>Email code</b> tab to sign in.</p>` : ""}</form>`;
+    $("#codeForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const token = new FormData(e.target).get("token").trim(), m = $("#codeMsg");
+      m.textContent = "Verifying…";
+      const r = await S.sb.auth.verifyOtp({ email, token, type });
+      if (r.error) return (m.textContent = r.error.message);
+      closeSheet();
+      if (type === "signup") banner("Account created. You can now sign in with your password.", "ok");
     });
   }
 

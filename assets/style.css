@@ -220,3 +220,7 @@ form.pf .consent input{width:auto;margin-top:3px}
 .ebanner.big{margin:-30px -30px 0;width:calc(100% + 60px);max-width:none;border-radius:20px 20px 0 0}
 .edesc{white-space:pre-wrap;color:var(--ink-2);margin:14px 0}
 @media(max-width:900px){.nav ul{top:66px}}
+
+.tabs{display:flex;gap:4px;margin:12px 0 16px;background:#eceeed;border-radius:999px;padding:4px}
+.tab{flex:1;border:0;background:none;padding:8px 6px;border-radius:999px;font:600 .85rem var(--sans);cursor:pointer;color:var(--ink-2)}
+.tab.on{background:#000;color:#fff}
