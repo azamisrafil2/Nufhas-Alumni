@@ -82,7 +82,8 @@ create or replace function public.public_stats() returns json
 language sql stable security definer set search_path = public as $$
   select json_build_object(
     'members', count(*) filter (where approved),
-    'cas',     count(*) filter (where approved and ca_status = 'Chartered Accountant'));
+    'cas',     count(*) filter (where approved and ca_status = 'Chartered Accountant'))
+  from public.profiles;
 $$;
 
 grant usage on schema public to anon, authenticated;
@@ -181,6 +182,93 @@ create policy "own files update" on storage.objects for update to authenticated
 
 create policy "own files delete" on storage.objects for delete to authenticated
   using ( bucket_id in ('avatars','cvs') and public.owns_profile_folder((storage.foldername(name))[1]) );
+
+-- ---------- EVENTS + QUICK LINKS (managed by admins, visible to everyone) ----------
+create table if not exists public.events (
+  id         uuid primary key default gen_random_uuid(),
+  title      text not null,
+  event_date date not null,
+  place      text,
+  tag        text,
+  link       text,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.links (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,
+  description text,
+  url         text not null,
+  sort        int  not null default 0,
+  created_at  timestamptz not null default now()
+);
+alter table public.events enable row level security;
+alter table public.links  enable row level security;
+
+drop policy if exists "events read"  on public.events;
+drop policy if exists "events admin" on public.events;
+drop policy if exists "links read"   on public.links;
+drop policy if exists "links admin"  on public.links;
+
+create policy "events read"  on public.events for select to anon, authenticated using (true);
+create policy "events admin" on public.events for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "links read"   on public.links  for select to anon, authenticated using (true);
+create policy "links admin"  on public.links  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+grant select on public.events, public.links to anon, authenticated;
+grant insert, update, delete on public.events, public.links to authenticated;
+
+insert into public.links (title, description, url, sort)
+select * from (values
+  ('Job Board', 'Openings posted by senior members and alumni.', '#/jobs', 1),
+  ('Update your profile', 'Add your photo, CV, skills and subject progress.', '#/profile', 2)
+) v(title, description, url, sort)
+where not exists (select 1 from public.links);
+
+-- ---------- LIBRARY: past papers + exam notes ----------
+create table if not exists public.library (
+  id               uuid primary key default gen_random_uuid(),
+  title            text not null,
+  kind             text not null check (kind in ('Past Paper','Exam Notes')),
+  level            text check (level in ('Certificate Level','Professional Level','Advanced Level')),
+  subject          text not null,
+  year             int,
+  description      text,
+  file_path        text,
+  link_url         text,
+  uploaded_by      text not null,
+  uploaded_by_name text,
+  created_at       timestamptz not null default now(),
+  check (file_path is not null or link_url is not null)
+);
+alter table public.library enable row level security;
+grant select, insert, update, delete on public.library to authenticated;
+
+drop policy if exists "library read"   on public.library;
+drop policy if exists "library insert" on public.library;
+drop policy if exists "library update" on public.library;
+drop policy if exists "library delete" on public.library;
+create policy "library read"   on public.library for select to authenticated using ( public.is_member() );
+create policy "library insert" on public.library for insert to authenticated
+  with check ( public.is_member() and lower(uploaded_by) = lower(coalesce(auth.jwt() ->> 'email','')) );
+create policy "library update" on public.library for update to authenticated
+  using ( public.is_admin() or lower(uploaded_by) = lower(coalesce(auth.jwt() ->> 'email','')) );
+create policy "library delete" on public.library for delete to authenticated
+  using ( public.is_admin() or lower(uploaded_by) = lower(coalesce(auth.jwt() ->> 'email','')) );
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('library', 'library', false, 20971520, array['application/pdf'])
+on conflict (id) do update set public = excluded.public,
+  file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "library files read"   on storage.objects;
+drop policy if exists "library files insert" on storage.objects;
+drop policy if exists "library files delete" on storage.objects;
+create policy "library files read" on storage.objects for select to authenticated
+  using ( bucket_id = 'library' and public.is_member() );
+create policy "library files insert" on storage.objects for insert to authenticated
+  with check ( bucket_id = 'library' and public.is_member() and public.owns_profile_folder((storage.foldername(name))[1]) );
+create policy "library files delete" on storage.objects for delete to authenticated
+  using ( bucket_id = 'library' and public.owns_profile_folder((storage.foldername(name))[1]) );
 
 -- ---------- FIRST ADMIN ----------
 -- Replace with YOUR email, remove the leading dashes, and run once:

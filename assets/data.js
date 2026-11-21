@@ -35,6 +35,12 @@ const EXAMPLE_JOBS = [
   }
 ];
 
+const EXAMPLE_LIBRARY = [
+  { id: "demo-lib-1", title: "Sample Past Paper", kind: "Past Paper", level: "Professional Level", subject: "Financial Accounting and Reporting (FAR)",
+    year: 2025, description: "Demo item. Real papers and notes are added by members after Supabase is connected.", filePath: "",
+    linkUrl: "https://example.com", by: "example.member@example.com", byName: "Example Member", createdAt: "2026-11-01T00:00:00Z" }
+];
+
 const EVENTS = [
   { date: "2026-12-12", title: "Annual Alumni Meet & Dinner", place: "Dhaka — Venue TBA", tag: "Networking" },
   { date: "2027-01-09", title: "Exam Strategy Workshop: Advanced Level", place: "Online (Zoom)", tag: "Workshop" },

@@ -9,7 +9,7 @@
   const JOB_TYPES = ["Full-time", "Part-time", "Internship", "Contract"];
 
   const S = { sb: null, demo: true, session: null, uid: null, email: "", me: null, isAdmin: false, isMember: false,
-              members: [], jobs: [], stats: null, ctx: { designations: [], departments: [], locations: [], skills: [] } };
+              members: [], jobs: [], events: [], links: [], library: [], stats: null, ctx: { designations: [], departments: [], locations: [], skills: [] } };
 
   /* ---------------- helpers ---------------- */
   const fmt = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "");
@@ -45,12 +45,23 @@
     expMin: r.exp_min, expMax: r.exp_max, caStatus: r.ca_status || "", skills: r.skills || "", description: r.description || "",
     applyContact: r.apply_contact, deadline: r.deadline || "", postedBy: r.posted_by, postedByName: r.posted_by_name || "", createdAt: r.created_at });
 
+  const toLib = (r) => ({ id: r.id, title: r.title, kind: r.kind, level: r.level || "", subject: r.subject, year: r.year, description: r.description || "",
+    filePath: r.file_path || "", linkUrl: r.link_url || "", by: r.uploaded_by, byName: r.uploaded_by_name || "", createdAt: r.created_at });
+  const toEvent = (r) => ({ id: r.id, title: r.title, date: r.event_date, place: r.place || "", tag: r.tag || "", link: r.link || "" });
+  const toLink = (r) => ({ id: r.id, title: r.title, text: r.description || "", link: r.url });
+  const safeUrl = (u) => (/^(https?:\/\/|#\/|mailto:)/i.test(u || "") ? u : "#");
+  const todayIso = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+
   /* ---------------- data loading ---------------- */
   async function loadAll() {
-    Object.assign(S, { members: [], jobs: [], me: null, isAdmin: false, isMember: false, email: "" });
-    if (S.demo) { S.members = EXAMPLE_MEMBERS; S.jobs = EXAMPLE_JOBS.slice(); S.isMember = true; buildCtx(); return; }
+    Object.assign(S, { members: [], jobs: [], library: [], me: null, isAdmin: false, isMember: false, email: "" });
+    if (S.demo) { S.events = EVENTS.map((e, i) => ({ id: "e" + i, ...e })); S.links = RESOURCES.map((r, i) => ({ id: "l" + i, ...r })); S.members = EXAMPLE_MEMBERS; S.library = EXAMPLE_LIBRARY; S.jobs = EXAMPLE_JOBS.slice(); S.isMember = true; buildCtx(); return; }
     try {
       const st = await S.sb.rpc("public_stats"); S.stats = st.data;
+      const [ev, lk] = await Promise.all([
+        S.sb.from("events").select("*").order("event_date", { ascending: true }).limit(200),
+        S.sb.from("links").select("*").order("sort", { ascending: true }).order("created_at", { ascending: true }).limit(100)]);
+      S.events = (ev.data || []).map(toEvent); S.links = (lk.data || []).map(toLink);
       if (S.session) {
         S.email = (S.session.user.email || "").toLowerCase();
         const [a, m] = await Promise.all([S.sb.rpc("is_admin"), S.sb.rpc("is_member")]);
@@ -58,11 +69,12 @@
         const mine = await S.sb.from("profiles").select("*").eq("email", S.email).maybeSingle();
         S.me = mine.data ? toMember(mine.data) : null;
         if (S.isMember) {
-          const [pm, jb] = await Promise.all([
+          const [pm, jb, lb] = await Promise.all([
             S.sb.from("profiles").select("*").order("articleship_start", { ascending: true, nullsFirst: false }).limit(2000),
-            S.sb.from("jobs").select("*").order("created_at", { ascending: false }).limit(500)]);
+            S.sb.from("jobs").select("*").order("created_at", { ascending: false }).limit(500),
+            S.sb.from("library").select("*").order("created_at", { ascending: false }).limit(1000)]);
           if (pm.error) throw pm.error; if (jb.error) throw jb.error;
-          S.members = pm.data.map(toMember); S.jobs = jb.data.map(toJob);
+          S.members = pm.data.map(toMember); S.jobs = jb.data.map(toJob); S.library = (lb.data || []).map(toLib);
         }
       }
     } catch (e) { console.error(e); banner("Could not load data: " + (e.message || e), "error", 0); }
@@ -77,7 +89,7 @@
   /* ---------------- router ---------------- */
   function route() {
     const h = location.hash || "#/";
-    const r = h.startsWith("#/jobs") ? "jobs" : h.startsWith("#/profile") ? "profile" : h.startsWith("#/admin") ? "admin" : "home";
+    const r = h.startsWith("#/jobs") ? "jobs" : h.startsWith("#/library") ? "library" : h.startsWith("#/profile") ? "profile" : h.startsWith("#/admin") ? "admin" : "home";
     $$(".view").forEach((v) => (v.hidden = v.id !== "view-" + r));
     $$("#menu a").forEach((a) => a.classList.toggle("active", a.dataset.route === r));
     $("#menu").classList.remove("open");
@@ -223,10 +235,10 @@
     if (rv) rv.addEventListener("click", (ev) => { ev.target.outerHTML = `<a href="tel:${esc(tel(m.phone))}">${esc(m.phone)}</a>`; });
   }
 
-  async function openCv(path, download) {
+  async function openCv(path, download, bucket = "cvs") {
     if (S.demo || !S.sb) return banner("CV storage works after Supabase is connected.", "info");
     const w = window.open("", "_blank");
-    const { data, error } = await S.sb.storage.from("cvs").createSignedUrl(path, 300, download ? { download: true } : undefined);
+    const { data, error } = await S.sb.storage.from(bucket).createSignedUrl(path, 300, download ? { download: true } : undefined);
     if (error || !data) { if (w) w.close(); return banner("Could not open the CV: " + (error?.message || "unknown error"), "error"); }
     if (w) w.location.href = data.signedUrl; else location.href = data.signedUrl;
   }
@@ -312,6 +324,96 @@
       const { error } = await S.sb.from("jobs").insert(row);
       if (error) return ($("#jobMsg").textContent = error.message);
       closeSheet(); await loadAll(); renderAll(); banner("Job published.", "ok");
+    });
+  }
+
+  /* ---------------- library (past papers + exam notes) ---------------- */
+  const SUBJECT_HINTS = ["Financial Accounting and Reporting (FAR)", "Business Planning: Taxation & Compliance (BPTC)", "Corporate Laws & Practices", "Strategic Business Management & Leadership (SBM&L)"];
+
+  function initLibrary() {
+    ["#lSearch", "#lKind", "#lLevel", "#lSubject", "#lYear"].forEach((s) => $(s).addEventListener("input", renderLibrary));
+    $("#addLib").addEventListener("click", openLibForm);
+    $("#libList").addEventListener("click", async (e) => {
+      const o = e.target.closest("[data-open]"), d = e.target.closest("[data-ldel]");
+      if (o) return openCv(o.dataset.open, false, "library");
+      if (d && confirm("Delete this item?")) {
+        if (S.demo) return banner("Demo mode: nothing to delete.", "info");
+        const it = S.library.find((x) => x.id === d.dataset.ldel);
+        const { error } = await S.sb.from("library").delete().eq("id", d.dataset.ldel);
+        if (error) return banner(error.message, "error");
+        if (it && it.filePath) S.sb.storage.from("library").remove([it.filePath]);
+        await loadAll(); renderAll(); banner("Deleted.", "ok");
+      }
+    });
+  }
+
+  function renderLibrary() {
+    const ok = S.isMember;
+    $("#libGate").hidden = ok; $("#libGate").innerHTML = ok ? "" : gateHtml("the library");
+    $("#libWrap").hidden = !ok; $("#addLib").hidden = !ok;
+    if (!ok) return;
+    const fillSel = (sel, vals, label) => { const keep = sel.value; sel.innerHTML = `<option value="">${label}</option>` + vals.map((v) => `<option>${esc(v)}</option>`).join(""); sel.value = keep; };
+    fillSel($("#lSubject"), uniq(S.library.map((x) => x.subject)).sort(), "All subjects");
+    fillSel($("#lYear"), uniq(S.library.map((x) => x.year && String(x.year))).sort().reverse(), "Any year");
+    const q = $("#lSearch").value.trim().toLowerCase(), k = $("#lKind").value, lv = $("#lLevel").value, sb = $("#lSubject").value, yr = $("#lYear").value;
+    const list = S.library.filter((x) => (!q || [x.title, x.subject, x.description, x.byName].join(" ").toLowerCase().includes(q)) &&
+      (!k || x.kind === k) && (!lv || x.level === lv) && (!sb || x.subject === sb) && (!yr || String(x.year) === yr));
+    $("#lCount").textContent = `${list.length} item${list.length === 1 ? "" : "s"}`;
+    $("#lEmpty").style.display = list.length ? "none" : "block";
+    $("#libList").innerHTML = list.map((x) => {
+      const owner = S.isAdmin || (S.email && x.by.toLowerCase() === S.email);
+      const open = x.filePath ? `<button class="btn btn-dark btn-sm" data-open="${esc(x.filePath)}">Open PDF</button>`
+        : `<a class="btn btn-dark btn-sm" href="${esc(safeUrl(x.linkUrl))}" target="_blank" rel="noopener">Open link ↗</a>`;
+      return `<article class="card"><div class="chips"><span class="chip ${x.kind === "Past Paper" ? "ca" : "loc"}">${esc(x.kind)}</span>
+          ${x.level ? `<span class="chip">${esc(x.level)}</span>` : ""}${x.year ? `<span class="chip exp">${esc(x.year)}</span>` : ""}</div>
+        <h3>${esc(x.title)}</h3><div class="org">${esc(x.subject)}</div>
+        ${x.description ? `<p class="jdesc">${esc(x.description)}</p>` : ""}
+        <div class="meta">Shared by ${esc(x.byName || x.by)} · ${esc(fmt((x.createdAt || "").slice(0, 10)))}</div>
+        <div class="card-actions">${open}${owner ? `<button class="btn btn-line btn-sm" data-ldel="${esc(x.id)}">Delete</button>` : ""}</div></article>`;
+    }).join("");
+  }
+
+  function openLibForm() {
+    if (S.demo) return banner("Uploading works after Supabase is connected (see README).", "info");
+    const subs = uniq([...SUBJECT_HINTS, ...S.library.map((x) => x.subject)]);
+    openSheet(`<h2 style="font-size:1.4rem;margin-bottom:12px">Add past paper / exam notes</h2>
+      <form class="pf" id="libForm">
+        <label>Type *<select name="kind"><option>Past Paper</option><option>Exam Notes</option></select></label>
+        <label>Level<select name="level"><option value="">—</option><option>Certificate Level</option><option>Professional Level</option><option>Advanced Level</option></select></label>
+        <label class="full">Subject *<input name="subject" required list="subjHints" placeholder="e.g. Financial Accounting and Reporting (FAR)"></label>
+        <datalist id="subjHints">${subs.map((s) => `<option value="${esc(s)}">`).join("")}</datalist>
+        <label>Exam year / session<input name="year" type="number" min="2000" max="2100" placeholder="2025"></label>
+        <label>Title (optional)<input name="title" placeholder="Auto: subject + year"></label>
+        <label class="full">Description<textarea name="description" rows="2" placeholder="Short note, e.g. solved, chapter list"></textarea></label>
+        <label class="full">PDF file (max 20 MB)<input name="file" type="file" accept="application/pdf"></label>
+        <label class="full">…or a link (Google Drive etc.) if you are not uploading a file<input name="link" placeholder="https://"></label>
+        <label class="consent full"><input type="checkbox" required> I have the right to share this material with NUFHAS Alumni members.</label>
+        <button class="btn btn-brand full" type="submit">Add to library</button>
+        <div class="formmsg full" id="libMsg"></div>
+      </form>`);
+    $("#libForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target), f = Object.fromEntries(fd.entries()), file = fd.get("file"), msg = $("#libMsg");
+      const hasFile = file && file.size > 0, link = f.link.trim();
+      if (!hasFile && !/^https?:\/\//i.test(link)) return (msg.textContent = "Choose a PDF file or paste a link starting with https://");
+      if (hasFile && file.type !== "application/pdf") return (msg.textContent = "Only PDF files are allowed.");
+      if (hasFile && file.size > 20 * 1024 * 1024) return (msg.textContent = "The PDF must be 20 MB or smaller.");
+      msg.textContent = "Uploading…";
+      let path = null;
+      try {
+        if (hasFile) {
+          const folder = S.me ? S.me.id : "admin", safe = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(-60);
+          path = `${folder}/${Date.now()}-${safe}`;
+          const up = await S.sb.storage.from("library").upload(path, file, { contentType: "application/pdf" });
+          if (up.error) throw up.error;
+        }
+        const year = f.year ? +f.year : null;
+        const row = { title: f.title.trim() || `${f.subject.trim()}${year ? " " + year : ""} — ${f.kind}`, kind: f.kind, level: f.level || null, subject: f.subject.trim(),
+          year, description: f.description.trim() || null, file_path: path, link_url: hasFile ? null : link, uploaded_by: S.email, uploaded_by_name: S.me?.name || S.email };
+        const ins = await S.sb.from("library").insert(row);
+        if (ins.error) { if (path) S.sb.storage.from("library").remove([path]); throw ins.error; }
+        closeSheet(); await loadAll(); renderAll(); banner("Added to the library.", "ok");
+      } catch (err) { msg.textContent = err.message || String(err); }
     });
   }
 
@@ -436,13 +538,47 @@
         ${S.jobs.length ? S.jobs.map((j) => `<div class="arow"><div><b>${esc(j.title)}</b> <span class="muted">${esc(j.company)} · by ${esc(j.postedBy)}</span></div>
           <button class="btn btn-line btn-sm" data-dj="${j.id}">Delete</button></div>`).join("") : `<p class="muted">No jobs.</p>`}
       </div>
+      <div class="card" style="margin-top:16px"><h3>Events (${S.events.length})</h3>
+        <form class="pf" id="evForm" style="margin:10px 0 14px">
+          <label class="full">Title *<input name="title" required></label>
+          <label>Date *<input name="date" type="date" required></label>
+          <label>Place<input name="place" placeholder="Dhaka — Venue"></label>
+          <label>Tag<input name="tag" placeholder="Networking / Workshop / Social"></label>
+          <label>Link (optional)<input name="link" placeholder="https://"></label>
+          <button class="btn btn-brand btn-sm full" type="submit">Add event</button>
+        </form>
+        ${S.events.map((e) => `<div class="arow"><div><b>${esc(e.title)}</b> <span class="muted">${esc(fmt(e.date))} · ${esc(e.place)}</span></div>
+          <button class="btn btn-line btn-sm" data-dev="${e.id}">Delete</button></div>`).join("") || `<p class="muted">No events.</p>`}
+      </div>
+      <div class="card" style="margin-top:16px"><h3>Quick links (${S.links.length})</h3>
+        <form class="pf" id="lkForm" style="margin:10px 0 14px">
+          <label>Title *<input name="title" required></label>
+          <label>Link *<input name="url" required placeholder="https:// or #/jobs"></label>
+          <label class="full">Short description<input name="description"></label>
+          <label>Order (1 = first)<input name="sort" type="number" value="10"></label>
+          <button class="btn btn-brand btn-sm" type="submit" style="align-self:end">Add link</button>
+        </form>
+        ${S.links.map((l) => `<div class="arow"><div><b>${esc(l.title)}</b> <span class="muted">${esc(l.link)}</span></div>
+          <button class="btn btn-line btn-sm" data-dlk="${l.id}">Delete</button></div>`).join("") || `<p class="muted">No links.</p>`}
+      </div>
       <p class="muted" style="margin-top:14px">Bulk edits (import, delete, export) are done in the Supabase Table Editor.</p>`;
   }
+  async function adminSubmit(e) {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries()); let r;
+    if (e.target.id === "evForm") r = await S.sb.from("events").insert({ title: f.title.trim(), event_date: f.date, place: f.place.trim() || null, tag: f.tag.trim() || null, link: f.link.trim() || null });
+    else if (e.target.id === "lkForm") r = await S.sb.from("links").insert({ title: f.title.trim(), description: f.description.trim() || null, url: f.url.trim(), sort: +f.sort || 0 });
+    else return;
+    if (r.error) return banner(r.error.message, "error");
+    await loadAll(); renderAll(); banner("Added.", "ok");
+  }
   async function adminAction(e) {
-    const a = e.target.closest("[data-ap],[data-rj],[data-dj]"); if (!a) return;
+    const a = e.target.closest("[data-ap],[data-rj],[data-dj],[data-dev],[data-dlk]"); if (!a) return;
     let r;
     if (a.dataset.ap) r = await S.sb.from("profiles").update({ approved: true }).eq("id", a.dataset.ap);
     else if (a.dataset.rj) { if (!confirm("Reject and delete this profile?")) return; r = await S.sb.from("profiles").delete().eq("id", a.dataset.rj); }
+    else if (a.dataset.dev) { if (!confirm("Delete this event?")) return; r = await S.sb.from("events").delete().eq("id", a.dataset.dev); }
+    else if (a.dataset.dlk) { if (!confirm("Delete this link?")) return; r = await S.sb.from("links").delete().eq("id", a.dataset.dlk); }
     else { if (!confirm("Delete this job?")) return; r = await S.sb.from("jobs").delete().eq("id", a.dataset.dj); }
     if (r.error) return banner(r.error.message, "error");
     await loadAll(); renderAll(); banner("Done.", "ok");
@@ -475,17 +611,29 @@
     });
   }
 
+  /* ---------------- events + quick links ---------------- */
+  function renderEvents() {
+    const up = S.events.filter((e) => e.date >= todayIso()).slice(0, 8);
+    $("#events").innerHTML = up.length ? up.map((ev) => {
+      const d = new Date(ev.date + "T00:00:00"), t = esc(ev.title);
+      const title = ev.link ? `<a href="${esc(safeUrl(ev.link))}" target="_blank" rel="noopener">${t}</a>` : t;
+      return `<div class="event"><div class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("en-GB", { month: "short" })}</span></div>
+        <div><h3>${title}</h3><p>${esc([ev.place, ev.tag].filter(Boolean).join(" · "))}</p></div></div>`;
+    }).join("") : `<p class="muted">No upcoming events yet.</p>`;
+  }
+  function renderLinks() {
+    $("#resources").innerHTML = S.links.length ? S.links.map((r) => {
+      const u = safeUrl(r.link), ext = /^https?:/i.test(u);
+      return `<a href="${esc(u)}"${ext ? ' target="_blank" rel="noopener"' : ""}><b>${esc(r.title)} →</b><span>${esc(r.text)}</span></a>`;
+    }).join("") : `<p class="muted">No links yet.</p>`;
+  }
+
   /* ---------------- misc render ---------------- */
-  function renderAll() { renderNav(); renderStats(); populateFilters(); renderDirectory(); renderJobs(); renderProfile(); renderAdmin(); route(); }
+  function renderAll() { renderNav(); renderStats(); populateFilters(); renderDirectory(); renderJobs(); renderProfile(); renderAdmin(); renderEvents(); renderLinks(); renderLibrary(); route(); }
 
   async function boot() {
     S.demo = !(typeof SUPABASE_URL === "string" && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
-    initDirectory(); initJobs();
-    $("#events").innerHTML = EVENTS.map((ev) => {
-      const d = new Date(ev.date + "T00:00:00");
-      return `<div class="event"><div class="date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("en-GB", { month: "short" })}</span></div><div><h3>${esc(ev.title)}</h3><p>${esc(ev.place)} · ${esc(ev.tag)}</p></div></div>`;
-    }).join("");
-    $("#resources").innerHTML = RESOURCES.map((r) => `<a href="${esc(r.link)}"><b>${esc(r.title)} →</b><span>${esc(r.text)}</span></a>`).join("");
+    initDirectory(); initJobs(); initLibrary();
     $("#year").textContent = today.getFullYear();
 
     document.addEventListener("click", (e) => {
@@ -495,6 +643,7 @@
     });
     document.addEventListener("keydown", (e) => e.key === "Escape" && closeSheet());
     $("#adminWrap").addEventListener("click", adminAction);
+    $("#adminWrap").addEventListener("submit", adminSubmit);
     $("#authBtn").addEventListener("click", async () => {
       if (S.session) { await S.sb.auth.signOut(); location.hash = "#/"; } else openAuth();
     });
