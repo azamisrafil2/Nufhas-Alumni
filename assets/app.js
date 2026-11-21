@@ -561,11 +561,17 @@
   function renderAdmin() {
     const w = $("#adminWrap");
     if (!S.isAdmin) { w.innerHTML = `<div class="card gate"><h3>Admins only</h3><p>You do not have access to this page.</p></div>`; return; }
-    const pending = S.members.filter((m) => !m.approved);
+    const pending = S.members.filter((m) => !m.approved), active = S.members.filter((m) => m.approved);
     w.innerHTML = `
       <div class="card"><h3>Pending members (${pending.length})</h3>
         ${pending.length ? pending.map((m) => `<div class="arow"><div><b>${esc(m.name)}</b> <span class="muted">${esc(m.email)}</span><div class="muted">${esc(m.designation || "—")} · ${esc(statusLabel(m))} · ${esc(m.company || "")}</div></div>
           <div class="row"><button class="btn btn-brand btn-sm" data-ap="${m.id}">Approve</button><button class="btn btn-line btn-sm" data-rj="${m.id}">Reject</button></div></div>`).join("") : `<p class="muted">No pending requests.</p>`}
+      </div>
+      <div class="card" style="margin-top:16px"><h3>Active members (${active.length})</h3>
+        <input id="admSearch" type="search" placeholder="Search name or email…" style="width:100%;margin:8px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit">
+        <p class="muted" style="margin:0 0 6px;font-size:.85rem"><b>Suspend</b> removes access but keeps the profile. <b>Remove</b> deletes the profile and files.</p>
+        ${active.map((m) => `<div class="arow" data-q="${esc((m.name + " " + m.email).toLowerCase())}"><div><b>${esc(m.name)}</b> <span class="muted">${esc(m.email)}</span><div class="muted">${esc(m.designation || "—")} · ${esc(statusLabel(m))}</div></div>
+          ${m.email === S.email ? `<span class="muted">(you)</span>` : `<div class="row"><button class="btn btn-line btn-sm" data-sp="${m.id}">Suspend</button><button class="btn btn-line btn-sm" data-rm="${m.id}">Remove</button></div>`}</div>`).join("") || `<p class="muted">No active members.</p>`}
       </div>
       <div class="card" style="margin-top:16px"><h3>Jobs (${S.jobs.length})</h3>
         ${S.jobs.length ? S.jobs.map((j) => `<div class="arow"><div><b>${esc(j.title)}</b> <span class="muted">${esc(j.company)} · by ${esc(j.postedBy)}</span></div>
@@ -622,10 +628,21 @@
     await loadAll(); renderAll(); banner("Added.", "ok");
   }
   async function adminAction(e) {
-    const a = e.target.closest("[data-ap],[data-rj],[data-dj],[data-dev],[data-dlk]"); if (!a) return;
+    const a = e.target.closest("[data-ap],[data-rj],[data-dj],[data-dev],[data-dlk],[data-sp],[data-rm]"); if (!a) return;
     let r;
     if (a.dataset.ap) r = await S.sb.from("profiles").update({ approved: true }).eq("id", a.dataset.ap);
     else if (a.dataset.rj) { if (!confirm("Reject and delete this profile?")) return; r = await S.sb.from("profiles").delete().eq("id", a.dataset.rj); }
+    else if (a.dataset.sp) {
+      const m = S.members.find((x) => String(x.id) === a.dataset.sp); if (!confirm(`Suspend ${m ? m.name : "this member"}? They lose access until you approve them again.`)) return;
+      r = await S.sb.from("profiles").update({ approved: false }).eq("id", a.dataset.sp);
+    }
+    else if (a.dataset.rm) {
+      const m = S.members.find((x) => String(x.id) === a.dataset.rm);
+      if (!confirm(`Permanently remove ${m ? m.name : "this member"} and their files? This cannot be undone.`)) return;
+      if (m && m.photoPath) S.sb.storage.from("avatars").remove([m.photoPath]);
+      if (m && m.cvPath) S.sb.storage.from("cvs").remove([m.cvPath]);
+      r = await S.sb.from("profiles").delete().eq("id", a.dataset.rm);
+    }
     else if (a.dataset.dev) { if (!confirm("Delete this event?")) return; const ev = S.events.find((x) => String(x.id) === a.dataset.dev); r = await S.sb.from("events").delete().eq("id", a.dataset.dev); if (!r.error && ev && ev.bannerPath) S.sb.storage.from("event-banners").remove([ev.bannerPath]); }
     else if (a.dataset.dlk) { if (!confirm("Delete this link?")) return; r = await S.sb.from("links").delete().eq("id", a.dataset.dlk); }
     else { if (!confirm("Delete this job?")) return; r = await S.sb.from("jobs").delete().eq("id", a.dataset.dj); }
@@ -735,6 +752,10 @@
     $("#events").addEventListener("keydown", (e) => { const c = e.target.closest("[data-ev]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openEvent(c.dataset.ev); } });
     $("#adminWrap").addEventListener("click", adminAction);
     $("#adminWrap").addEventListener("submit", adminSubmit);
+    $("#adminWrap").addEventListener("input", (e) => {
+      if (e.target.id !== "admSearch") return;
+      const t = e.target.value.trim().toLowerCase(); $$("#adminWrap [data-q]").forEach((row) => (row.hidden = !!t && !row.dataset.q.includes(t)));
+    });
     $("#authBtn").addEventListener("click", async () => {
       if (S.session) { await S.sb.auth.signOut(); location.hash = "#/"; } else openAuth();
     });
