@@ -120,7 +120,7 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
     $("#navAsk").hidden = !S.isMember; $("#navInbox").hidden = !S.isMember;
     $("#navProfile").hidden = !(S.session || S.demo);
     $(".menu-btn").hidden = !$$("#menu li").some((li) => !li.hidden);
-    $("#foot-mode").textContent = S.demo ? "Demo mode — connect Supabase (see README)" : (S.session ? "Signed in as " + S.email : "");
+    $("#foot-mode").textContent = (S.demo ? "Demo mode — connect Supabase (see README)" : (S.session ? "Signed in as " + S.email : "")) + " · site v3.2";
   }
 
   function renderHome() {
@@ -687,6 +687,9 @@ const byStart = (a, b) => (a.articleshipStart || "9999").localeCompare(b.article
   function renderAll() { renderNav(); renderHome(); renderStats(); populateFilters(); renderDirectory(); renderJobs(); renderProfile(); ADM.render(); NUFX.render(); renderEvents(); renderLinks(); renderLibrary(); route(); }
 
   async function boot() {
+    // Any unexpected script error becomes visible instead of failing silently.
+    window.addEventListener("error", (e) => { if (e.filename && /assets\//.test(e.filename)) banner("Script error: " + (e.message || "unknown") + " (" + String(e.filename).split("/").pop() + ":" + e.lineno + ")", "error", 0); });
+    window.addEventListener("unhandledrejection", (e) => banner("Error: " + ((e.reason && e.reason.message) || e.reason || "unknown"), "error", 0));
     S.demo = !(typeof SUPABASE_URL === "string" && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase);
     initDirectory(); initJobs(); initLibrary(); NUFX.init(); CAR.init(); ADM.init();
     $("#year").textContent = today.getFullYear();

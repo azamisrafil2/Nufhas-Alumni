@@ -171,7 +171,7 @@
 
   async function onSubmit(e) {
     e.preventDefault();
-    const id = e.target.id;
+    const id = e.target.getAttribute("id");
     if (id === "evForm" && N().S.isAdmin) return saveEvent(e.target);
     if (id === "lkForm" && N().S.isAdmin) return saveLink(e.target);
     if (id === "modForm" && N().S.isAdmin) return addModerator(e.target);
