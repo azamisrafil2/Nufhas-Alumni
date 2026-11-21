@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#86BC25">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="icon" href="assets/icon-192.png">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -18,6 +22,8 @@
         <li id="navHome" hidden><a href="#/" data-route="home">Directory</a></li>
         <li id="navJobs" hidden><a href="#/jobs" data-route="jobs">Jobs</a></li>
         <li id="navLibrary" hidden><a href="#/library" data-route="library">Library</a></li>
+        <li id="navAsk" hidden><a href="#/ask" data-route="ask">Q&amp;A</a></li>
+        <li id="navInbox" hidden><a href="#/inbox" data-route="inbox">Messages <span class="badge" id="inboxBadge" hidden></span></a></li>
         <li id="navProfile" hidden><a href="#/profile" data-route="profile">My profile</a></li>
         <li id="navAdmin" hidden><a href="#/admin" data-route="admin">Admin</a></li>
       </ul>
@@ -74,6 +80,11 @@
               <select id="fSort" aria-label="Sort"></select>
             </div>
 
+            <div class="checks">
+              <label><input type="checkbox" id="fMentor"> 🎓 Mentors only</label>
+              <label><input type="checkbox" id="fDonor"> ❤ Willing blood donors only</label>
+            </div>
+
             <div class="bar">
               <span id="count"></span>
               <button class="link-btn" id="reset" type="button">Reset filters</button>
@@ -82,6 +93,16 @@
             <div class="grid" id="grid"></div>
             <div class="empty" id="empty">No members match your search.</div>
           </div>
+        </div>
+      </section>
+
+      <section id="newsSec" hidden>
+        <div class="wrap">
+          <div class="sec-head row-between">
+            <div><h2>Community news</h2><p>Announcements, results and achievements from the NUFHAS community.</p></div>
+            <button class="btn btn-brand" id="addNews" type="button">+ Share news</button>
+          </div>
+          <div class="news-list" id="newsList"></div>
         </div>
       </section>
 
@@ -113,6 +134,7 @@
             <select id="jType"><option value="">All types</option><option>Full-time</option><option>Part-time</option><option>Internship</option><option>Contract</option></select>
             <select id="jExp"><option value="">Any experience</option><option value="0">Fresher / 0–1 yrs</option><option value="2">2+ years</option><option value="5">5+ years</option></select>
           </div>
+          <div class="checks"><label><input type="checkbox" id="jSaved"> ☆ Saved jobs only</label></div>
           <div class="bar"><span id="jCount"></span></div>
           <div class="jobs" id="jobsList"></div>
           <div class="empty" id="jEmpty">No jobs found.</div>
@@ -143,6 +165,30 @@
       </div>
     </section>
 
+    <!-- ================= Q&A ================= -->
+    <section id="view-ask" class="view" hidden>
+      <div class="wrap">
+        <div class="sec-head row-between">
+          <div><h2>Ask the community</h2><p>Questions about exams, articleship and careers, answered by fellow members.</p></div>
+          <button class="btn btn-brand" id="askBtn" type="button">+ Ask a question</button>
+        </div>
+        <div class="controls qcontrols">
+          <input id="qSearch" type="search" placeholder="Search questions…">
+          <select id="qTag"><option value="">All topics</option></select>
+        </div>
+        <div class="bar"><span id="qCount"></span></div>
+        <div class="jobs" id="qList"></div>
+      </div>
+    </section>
+
+    <!-- ================= MESSAGES ================= -->
+    <section id="view-inbox" class="view" hidden>
+      <div class="wrap narrow">
+        <div class="sec-head"><h2>Messages</h2><p>Private messages and mentorship requests from other members.</p></div>
+        <div id="inboxWrap"></div>
+      </div>
+    </section>
+
     <!-- ================= MY PROFILE ================= -->
     <section id="view-profile" class="view" hidden>
       <div class="wrap narrow">
@@ -155,7 +201,7 @@
     <!-- ================= ADMIN ================= -->
     <section id="view-admin" class="view" hidden>
       <div class="wrap">
-        <div class="sec-head"><h2>Admin</h2><p>Approve new members and moderate jobs.</p></div>
+        <div class="sec-head"><h2 id="admTitle">Admin</h2><p id="admSub">Approve new members and moderate posts.</p></div>
         <div id="adminWrap"></div>
       </div>
     </section>
@@ -174,6 +220,8 @@
   <script src="assets/config.js"></script>
   <script src="assets/data.js"></script>
   <script src="assets/smart.js"></script>
+  <script src="assets/community.js"></script>
+  <script src="assets/admin.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>
